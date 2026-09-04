@@ -1,0 +1,9 @@
+Copyright (c) 2026 TweakHub
+
+All rights reserved.
+
+This repository is proprietary source for the TweakHub platform. It is not
+licensed for redistribution. Third-party dependencies vendored or wrapped by
+this project retain their own licenses — see docs/licensing.md for a summary
+of the licensing terms (MIT, Apache 2.0, AGPL, commercial) that apply to each
+engine this platform integrates with, and the obligations each one carries.

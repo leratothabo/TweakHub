@@ -1,0 +1,48 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-settings==2.5.2
+email-validator==2.2.0
+SQLAlchemy==2.0.35
+psycopg2-binary==2.9.9
+httpx==0.27.2
+python-multipart==0.0.9
+python-jose[cryptography]==3.3.0
+redis==5.0.8
+rq==1.16.2
+boto3==1.35.36
+alembic==1.13.3
+bcrypt==4.2.0
+
+# -- Processing engines (see docs/engines.md) --
+pypdf==5.0.1
+pikepdf==9.4.1
+reportlab==4.2.5
+# 12.3.0, not 10.x — rembg (below) requires pillow>=12.1.0. Full test
+# suite (including every Pillow-backed image handler in test_engines.py)
+# re-verified passing against 12.3.0 before bumping this.
+Pillow==12.3.0
+pillow-heif==0.18.0
+cairosvg==2.7.1
+openpyxl==3.1.5
+markdown==3.7
+playwright==1.62.0
+# image_bg_remove (MediaConvertEngine._image_bg_remove) — both MIT; model
+# weights (u2netp, downloaded on first use from rembg's GitHub release)
+# are Apache-2.0. See docs/engines.md.
+rembg==2.0.81
+onnxruntime==1.29.0
+# LibreOffice, ffmpeg, poppler-utils, tesseract-ocr, qpdf are installed as
+# system packages in Dockerfile.api, not via pip — they're CLI tools these
+# engines shell out to, not Python libraries.
+
+pytest==8.3.3
+pytest-asyncio==0.24.0
+fakeredis==2.24.1
+moto[s3]==5.0.14
+aiosmtpd==1.4.6
+# Test-fixture only — builds a real minimal .pptx seed file in
+# test_engines.py for the pptx_to_odp/odp_to_pptx pair (MIT license). Not
+# imported by any engine/route code; LibreOffice does the actual
+# conversion work, same as every other document_convert.py pair.
+python-pptx==1.0.2

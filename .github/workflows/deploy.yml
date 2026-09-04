@@ -1,0 +1,50 @@
+name: Deploy to Truehost Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Deployment strategy: the app runs as Docker Compose services on the
+      # Truehost VPS (see infrastructure/docker/docker-compose.yml). Rather
+      # than SCP-ing a build artifact and running it with PM2 (the original
+      # plan), this pulls the latest commit on the VPS itself and rebuilds
+      # the containers there — one source of truth for what's deployed, and
+      # no build-output drift between CI and the server.
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.TRUEHOST_HOST }}
+          username: ${{ secrets.TRUEHOST_USERNAME }}
+          password: ${{ secrets.TRUEHOST_PASSWORD }}
+          port: ${{ secrets.TRUEHOST_PORT }}
+          script: |
+            set -e
+            cd /var/www/tweakhub
+            git fetch origin main
+            git reset --hard origin/main
+            if [ ! -f .env.production ]; then
+              echo "!! .env.production not found in /var/www/tweakhub -- run scripts/setup-truehost.sh's" >&2
+              echo "!! step 1 (cp .env.example .env.production, fill in real secrets) before the first deploy." >&2
+              exit 1
+            fi
+            cd infrastructure/docker
+            # --env-file on every command, not just the first manual deploy --
+            # without it, Compose falls back to its own defaults (an empty
+            # JWT_SECRET/DPO_COMPANY_TOKEN/etc.) and every push would silently
+            # wipe production secrets back out. See docs/TODO.md.
+            docker compose --env-file ../../.env.production pull --ignore-pull-failures || true
+            docker compose --env-file ../../.env.production build
+            docker compose --env-file ../../.env.production up -d
+            docker compose --env-file ../../.env.production ps

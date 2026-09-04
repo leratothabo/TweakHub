@@ -1,0 +1,74 @@
+name: Test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web
+        run: npm run build:web
+
+  test-api:
+    runs-on: ubuntu-latest
+    services:
+      # test_job_queue.py / test_job_worker.py / test_jobs_routes.py need a
+      # real Redis — RQ uses enough Redis-side machinery (registries, Lua
+      # scripts) that fakeredis (used for the simpler rate-limiter tests)
+      # isn't a reliable stand-in. Those tests skip cleanly if Redis isn't
+      # reachable (see tests/conftest.py's `needs_redis`), same pattern as
+      # the system-binary skips below — this service is what keeps them
+      # from silently skipping in CI.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: apps/api/requirements.txt
+
+      - name: Install engine system packages
+        # Matches infrastructure/docker/Dockerfile.api — without these,
+        # tests/test_engines.py's LibreOffice/ffmpeg/poppler/tesseract
+        # cases skip instead of running, which would let a real regression
+        # through unnoticed. See docs/engines.md.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libreoffice-writer libreoffice-calc libreoffice-impress libreoffice-core \
+            ffmpeg poppler-utils tesseract-ocr qpdf fonts-dejavu-core
+
+      - name: Install Python dependencies
+        run: pip install -r apps/api/requirements.txt
+
+      - name: Install Playwright Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Run tests
+        run: cd apps/api && pytest -q

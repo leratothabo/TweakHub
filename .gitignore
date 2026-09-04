@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+
+# Next.js
+.next/
+out/
+
+# Build outputs
+build/
+dist/
+
+# Env files
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Uploads / generated files (never commit user file uploads)
+uploads/
+tmp/
+storage_outputs/
+apps/api/tests/_test.db
+apps/api/_alembic_tmp*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Testing
+coverage/
+.pytest_cache/
+
+# Docker
+*.pid
+.vs/

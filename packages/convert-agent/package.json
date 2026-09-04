@@ -1,0 +1,8 @@
+{
+  "name": "@tweakhub/convert-agent-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript client stub for ConvertAgent's REST API (document pair conversions). See apps/api/services/engines/convert_agent_engine.py for the server-side wrapper that actually runs conversions.",
+  "main": "index.ts",
+  "types": "index.ts"
+}

@@ -1,0 +1,168 @@
+services:
+  # Postgres/Redis/MinIO are reached by the other services over the
+  # internal Compose network (hostnames "postgres"/"redis"/"minio") --
+  # nothing needs these ports published to the host at all, let alone to
+  # 0.0.0.0 on a public VPS with default credentials. If you need to reach
+  # one directly (psql, redis-cli, the MinIO console) from your own
+  # machine, use an SSH tunnel instead of opening a port to the internet,
+  # e.g.: ssh -L 5432:localhost:5432 root@<vps-ip>
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=tweakhub
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-tweakhub}
+      - POSTGRES_DB=tweakhub
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tweakhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  # Self-hosted S3-compatible storage — only used when STORAGE_BACKEND=s3
+  # below (default is "local", which just uses the shared ./storage_outputs
+  # volume and needs no object-storage service at all). Included so
+  # switching to it is a config change, not an infra project — see
+  # docs/TODO.md's object-storage note and services/storage_service.py.
+  # Pinned (not `latest`) so `docker compose pull` on every push (see
+  # .github/workflows/deploy.yml) can't silently change what's running.
+  minio:
+    image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${S3_ACCESS_KEY_ID:-tweakhub}
+      - MINIO_ROOT_PASSWORD=${S3_SECRET_ACCESS_KEY:-tweakhub-minio-secret}
+    ports:
+      # Only the admin console, and only on localhost -- the api/worker
+      # containers reach MinIO's S3 API over the internal network at
+      # minio:9000, they don't need it published. SSH-tunnel to reach the
+      # console: ssh -L 9001:localhost:9001 root@<vps-ip>, then
+      # http://localhost:9001 on your own machine.
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - miniodata:/data
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.api
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      # Interpolated from .env.production (falling back to the bundled
+      # containers' own defaults) rather than hardcoded, so setting
+      # POSTGRES_PASSWORD below actually takes effect, and DATABASE_URL/
+      # REDIS_URL can point at an external managed Postgres/Redis instead
+      # of the bundled containers if you set those directly.
+      - DATABASE_URL=${DATABASE_URL:-postgresql://tweakhub:${POSTGRES_PASSWORD:-tweakhub}@postgres:5432/tweakhub}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - DPO_COMPANY_TOKEN=${DPO_COMPANY_TOKEN}
+      - DPO_SERVICE_TYPE=${DPO_SERVICE_TYPE}
+      - JWT_SECRET=${JWT_SECRET}
+      - BASE_URL=${BASE_URL:-https://tweakhub.com}
+      # nginx.conf serves the API by path (https://<domain>/api/...) on
+      # the SAME domain as the frontend, not a separate api. subdomain --
+      # there's no DNS record, server block, or TLS cert for one anywhere
+      # in this repo. Keep this equal to BASE_URL unless you've actually
+      # added a real api. vhost (extra DNS + `certbot -d api.<domain>` +
+      # a matching nginx server block) yourself.
+      - API_URL=${API_URL:-${BASE_URL:-https://tweakhub.com}}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - S3_BUCKET=${S3_BUCKET:-tweakhub-outputs}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-http://minio:9000}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-tweakhub}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-tweakhub-minio-secret}
+    volumes:
+      - ./uploads:/app/uploads
+      - ./storage_outputs:/app/storage_outputs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # Runs the exact same image as `api`, just a different process — picks
+  # up ProcessingJob rows the API enqueues for ASYNC_TOOL_NAMES (video +
+  # document-engine tools) and does the actual conversion. See
+  # apps/workers/README.md. Scale this independently of `api` (more
+  # replicas = more parallel jobs) since it's stateless beyond the shared
+  # Postgres/Redis/storage.
+  worker:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.api
+    # --url must match whichever Redis services/job_queue.py actually
+    # enqueues to (JOB_QUEUE_REDIS_URL if set, else REDIS_URL) -- same
+    # fallback order as that module, so this worker is never listening on
+    # a different Redis than the API is enqueuing to.
+    command: ["rq", "worker", "${JOB_QUEUE_NAME:-tweakhub-tools}", "--url", "${JOB_QUEUE_REDIS_URL:-${REDIS_URL:-redis://redis:6379/0}}"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgresql://tweakhub:${POSTGRES_PASSWORD:-tweakhub}@postgres:5432/tweakhub}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JOB_QUEUE_NAME=${JOB_QUEUE_NAME:-tweakhub-tools}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - S3_BUCKET=${S3_BUCKET:-tweakhub-outputs}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-http://minio:9000}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-tweakhub}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-tweakhub-minio-secret}
+    volumes:
+      - ./storage_outputs:/app/storage_outputs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.web
+      args:
+        # Next.js needs this at *build* time, not container start -- see
+        # Dockerfile.web's comment. Defaults to the same domain as the
+        # API (nginx.conf proxies /api/ by path on one domain, there's no
+        # separate api. subdomain set up anywhere) so a same-origin fetch
+        # from the browser just works with no CORS involved at all.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-${BASE_URL:-https://tweakhub.com}}
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Lives in infrastructure/nginx/, not infrastructure/docker/ — this
+      # compose file is in the latter, so the path has to reach up and
+      # over. (Docker silently creates a missing bind-mount source as an
+      # empty directory rather than failing, so a wrong path here doesn't
+      # error at `docker compose up` — nginx just starts with no config
+      # and immediately crash-loops. Verified against the actual file
+      # layout, not assumed.)
+      - ../nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - /etc/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  miniodata:

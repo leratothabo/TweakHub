@@ -1,0 +1,31 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package*.json ./
+COPY apps/web/package.json ./apps/web/package.json
+COPY packages ./packages
+RUN npm ci
+
+COPY apps/web ./apps/web
+
+# Next.js inlines every NEXT_PUBLIC_* var into the client JS bundle at
+# `next build` time -- setting it as a *runtime* `environment:` on the
+# `web` service in docker-compose.yml (as a container ENV var normally
+# would work) has no effect on already-compiled client code. It has to
+# be a build ARG, threaded through here and from docker-compose.yml's
+# `build.args`, or every deployed frontend silently ships with
+# lib/api.ts's dev fallback (http://localhost:3001) baked in permanently.
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+RUN npm run build --workspace=apps/web
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/apps/web/.next/standalone ./
+COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder /app/apps/web/public ./apps/web/public
+
+EXPOSE 3000
+CMD ["node", "apps/web/server.js"]

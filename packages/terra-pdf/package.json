@@ -1,0 +1,8 @@
+{
+  "name": "@tweakhub/terra-pdf-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript client stub for the TerraPDF (.NET) template-generation microservice. See apps/api/services/engines/terra_pdf_engine.py for the server-side wrapper.",
+  "main": "index.ts",
+  "types": "index.ts"
+}

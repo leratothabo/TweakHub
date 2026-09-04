@@ -1,0 +1,48 @@
+# apps/api is FastAPI (Python) — see docs/tweakhub-master-plan.md's "Open
+# Risks" note: the original plan sketched a Node/TS API but every sample
+# service/route/model file was Python, so the scaffold standardized on
+# FastAPI. This Dockerfile replaces the Node-based one from the original
+# plan accordingly.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Real processing engines (see docs/engines.md) — these are the actual
+# CLI tools the engines in services/engines/ shell out to, not optional
+# extras. This makes the image large (LibreOffice alone is several hundred
+# MB) but that's the honest cost of doing PDF/office/media conversion for
+# real rather than pretending a thin wrapper around an unverified third
+# -party microservice (the original plan's AVX/ConvertAgent/TerraPDF) does
+# it. See docs/licensing.md for the license of each of these.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    libreoffice-writer libreoffice-calc libreoffice-impress libreoffice-core \
+    ffmpeg \
+    poppler-utils \
+    tesseract-ocr \
+    qpdf \
+    fonts-dejavu-core \
+    # Playwright's Chromium needs these even in headless mode.
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+    libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+    libgbm1 libpango-1.0-0 libasound2 \
+    # onnxruntime's CPU execution provider (image_bg_remove, via rembg)
+    # dynamically links libgomp — present on full Debian but not on this
+    # slim base image by default.
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY apps/api/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && playwright install chromium
+
+COPY apps/api ./
+RUN chmod +x docker-entrypoint.sh
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+    CMD curl -f http://localhost:3001/health || exit 1
+
+# Runs `alembic upgrade head` before starting uvicorn — see docker-entrypoint.sh.
+ENTRYPOINT ["./docker-entrypoint.sh"]

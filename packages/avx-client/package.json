@@ -1,0 +1,8 @@
+{
+  "name": "@tweakhub/avx-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript client stub for the AVX conversion microservice (mirrors apps/api/services/engines/avx_engine.py for frontend-side previews/status polling).",
+  "main": "index.ts",
+  "types": "index.ts"
+}
