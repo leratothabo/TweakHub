@@ -14,6 +14,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from models import Organization, OrganizationMember, OrgRole, PlanTier, User
@@ -140,7 +141,20 @@ def accept_invite(db: Session, token: str, accepting_user: User) -> Organization
     member.invite_token = None
     member.invite_expires_at = None
     db.add(member)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # The get_membership() check above is a plain SELECT with no
+        # lock — two concurrent accept-invite calls for two different
+        # pending invites to the same email (plausible: a shared work
+        # email invited by two different orgs) can both pass it before
+        # either commits. models/organization.py's
+        # uq_org_members_one_org_per_user partial index is what actually
+        # stops the second one from creating a second joined membership;
+        # this is that constraint violation surfacing as a clean 4xx
+        # instead of an unhandled 500.
+        db.rollback()
+        raise OrgError("You already belong to an organization — see models/organization.py's v1 note")
     db.refresh(member)
     return member
 

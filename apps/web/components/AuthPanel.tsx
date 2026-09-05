@@ -66,21 +66,21 @@ export default function AuthPanel({ onAuthenticated }: Props) {
   }
 
   return (
-    <form onSubmit={submit} className="auth-panel">
+    <form onSubmit={submit} style={styles.row}>
       <input
         type="email"
         placeholder="you@example.com"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         required
-        className="auth-input"
+        style={styles.input}
       />
       {mode === "signup" && (
         <input
           placeholder="Full name (optional)"
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
-          className="auth-input"
+          style={styles.input}
         />
       )}
       <input
@@ -90,9 +90,9 @@ export default function AuthPanel({ onAuthenticated }: Props) {
         onChange={(e) => setPassword(e.target.value)}
         required
         minLength={8}
-        className="auth-input"
+        style={styles.input}
       />
-      <button type="submit" disabled={busy} className="btn btn-primary btn-sm">
+      <button type="submit" disabled={busy} style={styles.primaryButton}>
         {busy ? "…" : mode === "login" ? "Sign in" : "Create account"}
       </button>
       <button
@@ -102,24 +102,62 @@ export default function AuthPanel({ onAuthenticated }: Props) {
           setError(null);
           setNotice(null);
         }}
-        className="auth-toggle"
+        style={styles.linkButton}
       >
         {mode === "login" ? "Need an account?" : "Have an account?"}
       </button>
 
       {mode === "signup" && referralCode && (
-        <p className="auth-notice">
+        <p style={styles.notice}>
           Signing up via an invite ({referralCode}) — you&apos;ll both get bonus credits once you
           verify your email.
         </p>
       )}
       {googleEnabled && (
-        <a href={api.googleLoginUrl()} className="btn btn-ghost btn-sm">
-          Continue with Google
+        <a href={api.googleLoginUrl()} style={styles.googleButton}>
+          Sign in with Google
         </a>
       )}
-      {error && <p className="auth-error">{error}</p>}
-      {notice && <p className="auth-notice">{notice}</p>}
+      {error && <p style={styles.error}>{error}</p>}
+      {notice && <p style={styles.notice}>{notice}</p>}
     </form>
   );
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  row: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 },
+  input: {
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid var(--border)",
+    background: "var(--surface)",
+    color: "var(--text)",
+    width: 160,
+  },
+  primaryButton: {
+    padding: "8px 16px",
+    borderRadius: 8,
+    border: "none",
+    background: "var(--accent-2)",
+    color: "#12151c",
+    fontWeight: 700,
+  },
+  linkButton: {
+    background: "none",
+    border: "none",
+    color: "var(--text-muted)",
+    fontSize: 12,
+    textDecoration: "underline",
+  },
+  error: { width: "100%", color: "var(--danger)", fontSize: 13, margin: 0 },
+  notice: { width: "100%", color: "var(--success)", fontSize: 13, margin: 0 },
+  googleButton: {
+    padding: "8px 16px",
+    borderRadius: 8,
+    border: "1px solid var(--border)",
+    background: "var(--surface)",
+    color: "var(--text)",
+    fontSize: 13,
+    textDecoration: "none",
+  },
+};

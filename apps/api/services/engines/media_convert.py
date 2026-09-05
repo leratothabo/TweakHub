@@ -27,8 +27,9 @@ import zipfile
 from functools import lru_cache
 from typing import Any, BinaryIO
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 from pypdf import PdfReader
+from pypdf.errors import PyPdfError
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
@@ -279,6 +280,10 @@ class MediaConvertEngine(Engine):
             return EngineResult(ok=False, error=f"MediaConvertEngine has no handler for '{tool_name}'")
         try:
             return handler(input_data, options)
+        except (PyPdfError, UnidentifiedImageError) as exc:
+            # pypdf/Pillow couldn't parse the uploaded file at all — a
+            # malformed/corrupted PDF or image, not a bug on our side.
+            return EngineResult(ok=False, error=f"{tool_name} failed: {exc}", refundable=False)
         except Exception as exc:  # noqa: BLE001
             return EngineResult(ok=False, error=f"{tool_name} failed: {exc}")
 
@@ -306,7 +311,9 @@ class MediaConvertEngine(Engine):
 
             pages = sorted(d.glob("page-*"))
             if not pages:
-                return EngineResult(ok=False, error="No pages rasterized — is this a valid PDF?")
+                return EngineResult(
+                    ok=False, error="No pages rasterized — is this a valid PDF?", refundable=False,
+                )
 
             if len(pages) == 1:
                 return EngineResult(
@@ -359,7 +366,10 @@ class MediaConvertEngine(Engine):
     def _pdf_compare(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         extra_files: list[bytes] = options.get("extra_files") or []
         if not extra_files:
-            return EngineResult(ok=False, error="pdf_compare needs a second file in options['extra_files']")
+            return EngineResult(
+                ok=False, error="pdf_compare needs a second file in options['extra_files']",
+                refundable=False,
+            )
 
         a_reader = PdfReader(input_data)
         b_reader = PdfReader(io.BytesIO(extra_files[0]))
@@ -377,7 +387,7 @@ class MediaConvertEngine(Engine):
     def _image_convert(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         target_format = options.get("target_format")
         if not target_format:
-            return EngineResult(ok=False, error="options['target_format'] is required")
+            return EngineResult(ok=False, error="options['target_format'] is required", refundable=False)
 
         img = Image.open(input_data)
         if target_format.lower() in ("jpg", "jpeg") and img.mode in ("RGBA", "P"):
@@ -392,7 +402,9 @@ class MediaConvertEngine(Engine):
         img = Image.open(input_data)
         width, height = options.get("width"), options.get("height")
         if not width and not height:
-            return EngineResult(ok=False, error="Provide options['width'] and/or options['height']")
+            return EngineResult(
+                ok=False, error="Provide options['width'] and/or options['height']", refundable=False,
+            )
 
         orig_w, orig_h = img.size
         if width and not height:
@@ -519,7 +531,7 @@ class MediaConvertEngine(Engine):
     def _video_convert(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         target_format = options.get("target_format")
         if not target_format:
-            return EngineResult(ok=False, error="options['target_format'] is required")
+            return EngineResult(ok=False, error="options['target_format'] is required", refundable=False)
         out = self._run_ffmpeg(input_data.read(), "mp4", target_format, [], tool_name=options.get("tool_name"))
         return EngineResult(ok=True, output_bytes=out, content_type=f"video/{target_format}")
 
@@ -527,7 +539,11 @@ class MediaConvertEngine(Engine):
         start = str(options.get("start", "0"))
         duration = options.get("duration")
         args = ["-ss", start]
-        if duration:
+        # `if duration:` treats an explicit duration=0 the same as "not
+        # given" (0 is falsy) and silently trims to the end of the file
+        # instead of producing a (near-)empty clip — `is not None` is the
+        # actual "was this provided" check.
+        if duration is not None:
             args += ["-t", str(duration)]
         args += ["-c", "copy"]
         out = self._run_ffmpeg(input_data.read(), "mp4", "mp4", args, tool_name=options.get("tool_name"))
@@ -547,7 +563,10 @@ class MediaConvertEngine(Engine):
     def _video_merge(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         extra_files: list[bytes] = options.get("extra_files") or []
         if not extra_files:
-            return EngineResult(ok=False, error="video_merge needs at least one file in options['extra_files']")
+            return EngineResult(
+                ok=False, error="video_merge needs at least one file in options['extra_files']",
+                refundable=False,
+            )
 
         n = 1 + len(extra_files)
         filter_complex = "".join(f"[{i}:v:0][{i}:a:0]" for i in range(n)) + f"concat=n={n}:v=1:a=1[v][a]"
@@ -582,7 +601,10 @@ class MediaConvertEngine(Engine):
     def _subtitle_burn(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         extra_files: list[bytes] = options.get("extra_files") or []
         if not extra_files:
-            return EngineResult(ok=False, error="subtitle_burn needs an .srt file in options['extra_files']")
+            return EngineResult(
+                ok=False, error="subtitle_burn needs an .srt file in options['extra_files']",
+                refundable=False,
+            )
 
         timeout = get_subprocess_timeout_seconds(options.get("tool_name") or "subtitle_burn")
         with scratch_dir() as d:
@@ -599,7 +621,7 @@ class MediaConvertEngine(Engine):
     def _audio_convert(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         target_format = options.get("target_format")
         if not target_format:
-            return EngineResult(ok=False, error="options['target_format'] is required")
+            return EngineResult(ok=False, error="options['target_format'] is required", refundable=False)
         out = self._run_ffmpeg(input_data.read(), "wav", target_format, [], tool_name=options.get("tool_name"))
         return EngineResult(ok=True, output_bytes=out, content_type=f"audio/{target_format}")
 
@@ -613,7 +635,10 @@ class MediaConvertEngine(Engine):
         start = str(options.get("start", "0"))
         duration = options.get("duration")
         args = ["-ss", start]
-        if duration:
+        # See _video_trim's comment: `is not None`, not truthiness — a
+        # caller-supplied duration=0 must not be reinterpreted as "no
+        # duration given."
+        if duration is not None:
             args += ["-t", str(duration)]
         out = self._run_ffmpeg(input_data.read(), "wav", "wav", args, tool_name=options.get("tool_name"))
         return EngineResult(ok=True, output_bytes=out, content_type="audio/wav")
@@ -621,7 +646,10 @@ class MediaConvertEngine(Engine):
     def _audio_merge(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         extra_files: list[bytes] = options.get("extra_files") or []
         if not extra_files:
-            return EngineResult(ok=False, error="audio_merge needs at least one file in options['extra_files']")
+            return EngineResult(
+                ok=False, error="audio_merge needs at least one file in options['extra_files']",
+                refundable=False,
+            )
 
         n = 1 + len(extra_files)
         filter_complex = "".join(f"[{i}:a:0]" for i in range(n)) + f"concat=n={n}:v=0:a=1[a]"
@@ -661,6 +689,15 @@ class MediaConvertEngine(Engine):
         )
 
     def _xlsx_to_csv(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
+        # CSV has no concept of multiple sheets, so only the workbook's
+        # active sheet is exported — every other sheet's data is dropped.
+        # That's an inherent format limitation (same one document_convert.
+        # py's xls_to_csv/ods_to_csv LibreOffice-filter-based handlers
+        # have — see docs/engines.md), not something a different library
+        # call fixes, but it was previously silent: nothing in the
+        # response told the caller a multi-sheet workbook lost data.
+        # `meta.sheets_total`/`meta.sheets_exported` surface it instead of
+        # a `.csv` that quietly looks complete.
         from openpyxl import load_workbook
 
         wb = load_workbook(input_data, data_only=True)
@@ -673,5 +710,7 @@ class MediaConvertEngine(Engine):
             writer.writerow(["" if v is None else v for v in row])
             row_count += 1
 
-        return EngineResult(ok=True, output_bytes=buf.getvalue().encode("utf-8"), content_type="text/csv",
-                             meta={"rows": row_count})
+        return EngineResult(
+            ok=True, output_bytes=buf.getvalue().encode("utf-8"), content_type="text/csv",
+            meta={"rows": row_count, "sheets_total": len(wb.sheetnames), "sheets_exported": 1},
+        )

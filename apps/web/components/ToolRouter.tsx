@@ -2,23 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api, JobResult, ToolCategory, ToolSummary } from "@/lib/api";
-import {
-  IconAudio,
-  IconCheck,
-  IconDocument,
-  IconImage,
-  IconPdf,
-  IconUpload,
-  IconVideo,
-} from "@/components/icons/Icons";
 
-const CATEGORIES: { key: ToolCategory; label: string; icon: typeof IconPdf }[] = [
-  { key: "pdf", label: "PDF", icon: IconPdf },
-  { key: "image", label: "Image", icon: IconImage },
-  { key: "video", label: "Video", icon: IconVideo },
-  { key: "audio", label: "Audio", icon: IconAudio },
-  { key: "document", label: "Document", icon: IconDocument },
-];
+const CATEGORIES: ToolCategory[] = ["pdf", "image", "video", "audio", "document"];
 
 // Tools that combine multiple inputs — shows the "extra file(s)" picker.
 const MULTI_FILE_TOOLS = new Set([
@@ -109,63 +94,43 @@ export default function ToolRouter({ token, onRun }: Props) {
 
   return (
     <div>
-      <div className="category-tabs">
-        {CATEGORIES.map((c) => {
-          const active = category === c.key;
-          return (
-            <button
-              key={c.key}
-              onClick={() => setCategory(c.key)}
-              className="category-tab"
-              style={{
-                background: active ? "var(--accent-fill)" : "var(--surface-2)",
-                color: active ? "var(--on-accent)" : "var(--text-muted)",
-                borderColor: active ? "transparent" : "var(--border)",
-              }}
-            >
-              <c.icon size={16} />
-              {c.label}
-            </button>
-          );
-        })}
+      <div style={styles.tabs}>
+        {CATEGORIES.map((c) => (
+          <button
+            key={c}
+            onClick={() => setCategory(c)}
+            style={{
+              ...styles.tab,
+              background: category === c ? "var(--accent)" : "var(--surface-2)",
+              color: category === c ? "#12151c" : "var(--text)",
+            }}
+          >
+            {c}
+          </button>
+        ))}
       </div>
 
-      <div className="tool-grid">
+      <div style={styles.toolGrid}>
         {tools.map((t) => (
           <button
             key={t.name}
             onClick={() => setSelectedTool(t.name)}
-            className="card card-hover tool-card"
             style={{
-              borderColor: selectedTool === t.name ? "var(--accent-2)" : "var(--border)",
-              boxShadow: selectedTool === t.name ? "0 0 0 1px var(--accent-2)" : undefined,
+              ...styles.toolCard,
+              borderColor: selectedTool === t.name ? "var(--accent)" : "var(--border)",
             }}
           >
-            <div style={{ fontWeight: 700, fontSize: 14.5 }}>{t.label}</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 6, fontFamily: "var(--font-mono)" }}>
+            <div style={{ fontWeight: 600 }}>{t.label}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
               {t.base_credits} credits{t.is_async ? " · background job" : ""}
             </div>
           </button>
         ))}
-        {tools.length === 0 && (
-          <div style={{ color: "var(--text-dim)", fontSize: 13.5, padding: "8px 2px" }}>Loading tools…</div>
-        )}
       </div>
 
       {selectedTool && (
-        <div className="card" style={{ marginTop: 24, padding: 24, maxWidth: 520 }}>
-          <label htmlFor="tool-file" className="dropzone">
-            <IconUpload size={22} color="var(--accent-2)" />
-            <span style={{ fontWeight: 700, fontSize: 14 }}>
-              {file ? file.name : "Choose a file or drag it here"}
-            </span>
-            <input
-              id="tool-file"
-              type="file"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              style={{ display: "none" }}
-            />
-          </label>
+        <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10, maxWidth: 480 }}>
+          <input type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
 
           {MULTI_FILE_TOOLS.has(selectedTool) && (
             <label style={styles.hint}>
@@ -175,12 +140,11 @@ export default function ToolRouter({ token, onRun }: Props) {
                 type="file"
                 multiple
                 onChange={(e) => setExtraFiles(Array.from(e.target.files ?? []))}
-                style={{ marginTop: 4 }}
               />
             </label>
           )}
 
-          <label style={{ ...styles.hint, marginTop: 14 }}>
+          <label style={styles.hint}>
             Options (JSON) — see docs/engines.md for what this tool reads, e.g.{" "}
             {"{"}&quot;angle&quot;: 180{"}"}
             <textarea
@@ -191,18 +155,15 @@ export default function ToolRouter({ token, onRun }: Props) {
             />
           </label>
 
-          <button disabled={!token || !file || busy} onClick={run} className="btn btn-primary" style={{ marginTop: 16, width: "100%" }}>
+          <button disabled={!token || !file || busy} onClick={run} style={styles.runButton}>
             {busy ? "Processing…" : token ? "Run tool" : "Sign in to run"}
           </button>
 
-          {statusText && <p style={{ color: "var(--text-muted)", fontSize: 13.5, marginTop: 12 }}>{statusText}</p>}
-          {error && <p style={{ color: "var(--danger)", fontSize: 13.5, marginTop: 12 }}>{error}</p>}
+          {statusText && <p style={{ color: "var(--text-muted)", margin: 0 }}>{statusText}</p>}
+          {error && <p style={{ color: "var(--danger)", margin: 0 }}>{error}</p>}
           {downloadUrl && (
-            <a href={downloadUrl} download={downloadName ?? undefined} className="result-banner">
-              <IconCheck size={17} color="var(--success)" />
-              <span>
-                Ready — download {downloadName ? <strong>{downloadName}</strong> : "your result"}
-              </span>
+            <a href={downloadUrl} download={downloadName ?? undefined} style={styles.downloadLink}>
+              Download result{downloadName ? ` — ${downloadName}` : ""}
             </a>
           )}
         </div>
@@ -212,15 +173,50 @@ export default function ToolRouter({ token, onRun }: Props) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  tabs: { display: "flex", gap: 8, marginBottom: 16 },
+  tab: {
+    padding: "8px 16px",
+    borderRadius: 999,
+    border: "1px solid var(--border)",
+    fontWeight: 600,
+    textTransform: "capitalize",
+  },
+  toolGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+    gap: 10,
+  },
+  toolCard: {
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
+    padding: 14,
+    textAlign: "left",
+    color: "var(--text)",
+  },
   hint: { fontSize: 12, color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 4 },
   textarea: {
-    fontFamily: "var(--font-mono)",
+    fontFamily: "monospace",
     fontSize: 12,
     padding: 8,
     borderRadius: 8,
     border: "1px solid var(--border)",
-    background: "var(--surface-2)",
+    background: "var(--surface)",
     color: "var(--text)",
     resize: "vertical",
+  },
+  runButton: {
+    padding: "10px 20px",
+    borderRadius: 8,
+    border: "none",
+    background: "var(--accent)",
+    color: "#12151c",
+    fontWeight: 700,
+    alignSelf: "flex-start",
+  },
+  downloadLink: {
+    color: "var(--success)",
+    fontWeight: 600,
+    textDecoration: "underline",
   },
 };

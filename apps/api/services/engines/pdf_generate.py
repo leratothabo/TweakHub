@@ -42,7 +42,7 @@ class PdfGenerateEngine(Engine):
         try:
             payload = json.loads(input_data.read() or b"{}")
         except json.JSONDecodeError as exc:
-            return EngineResult(ok=False, error=f"Invalid JSON template data: {exc}")
+            return EngineResult(ok=False, error=f"Invalid JSON template data: {exc}", refundable=False)
 
         try:
             return handler(payload)

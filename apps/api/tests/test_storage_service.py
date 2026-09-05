@@ -54,13 +54,37 @@ def test_local_backend_signed_url_round_trips(local_storage):
 
     assert "expires=" in url and "sig=" in url and "filename=result.pdf" in url
 
-    # Pull the key/expires/sig back out the way routes/files.py's query
-    # params would arrive, and confirm verify() accepts them.
+    # Pull the key/expires/sig/filename back out the way routes/files.py's
+    # query params would arrive, and confirm verify() accepts them —
+    # filename is part of what's signed (see storage_service.py's _sign),
+    # so it has to be passed through here too, not just key/expires/sig.
     from urllib.parse import parse_qs, urlparse
 
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
-    assert local_storage.verify("outputs/c.pdf", int(qs["expires"][0]), qs["sig"][0]) is True
+    assert (
+        local_storage.verify(
+            "outputs/c.pdf", int(qs["expires"][0]), qs["sig"][0], qs["filename"][0]
+        )
+        is True
+    )
+
+
+def test_local_backend_signed_url_rejects_tampered_filename(local_storage):
+    """filename is signed alongside key/expires_at specifically so a
+    holder of a valid link can't rewrite it to spoof the suggested
+    save-as name — verify() must reject a signature computed for one
+    filename when checked against a different one."""
+    local_storage.save("outputs/c2.pdf", b"%PDF-fake", "application/pdf")
+    url = local_storage.signed_url("outputs/c2.pdf", expires_in=60, filename="real.pdf")
+    from urllib.parse import parse_qs, urlparse
+
+    qs = parse_qs(urlparse(url).query)
+    expires, sig = int(qs["expires"][0]), qs["sig"][0]
+
+    assert local_storage.verify("outputs/c2.pdf", expires, sig, "real.pdf") is True
+    assert local_storage.verify("outputs/c2.pdf", expires, sig, "spoofed.pdf") is False
+    assert local_storage.verify("outputs/c2.pdf", expires, sig, None) is False
 
 
 def test_local_backend_signed_url_rejects_tampered_signature(local_storage):

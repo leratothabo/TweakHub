@@ -41,7 +41,7 @@ def download_file(
         # link from before a backend switch.
         raise HTTPException(status_code=404, detail="Not found")
 
-    if not backend.verify(key, expires, sig):
+    if not backend.verify(key, expires, sig, filename):
         raise HTTPException(status_code=403, detail="Link is invalid or has expired")
 
     try:

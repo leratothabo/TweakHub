@@ -72,6 +72,7 @@ class TestPdfManipulateEngine:
         result = self._run("pdf_merge", sample_pdf_bytes)
         assert result.ok is False
         assert "extra_files" in result.error
+        assert result.refundable is False  # missing required file — the user's mistake, not ours
 
     def test_split_default_one_pdf_per_page(self, sample_pdf_bytes):
         result = self._run("pdf_split", sample_pdf_bytes)
@@ -87,6 +88,7 @@ class TestPdfManipulateEngine:
     def test_extract_pages_requires_pages_option(self, sample_pdf_bytes):
         result = self._run("pdf_extract_pages", sample_pdf_bytes)
         assert result.ok is False
+        assert result.refundable is False  # missing required option — the user's mistake, not ours
 
     def test_watermark_produces_valid_pdf(self, sample_pdf_bytes):
         from pypdf import PdfReader
@@ -107,6 +109,7 @@ class TestPdfManipulateEngine:
     def test_rotate_rejects_non_multiple_of_90(self, sample_pdf_bytes):
         result = self._run("pdf_rotate", sample_pdf_bytes, angle=45)
         assert result.ok is False
+        assert result.refundable is False  # invalid option value — the user's mistake, not ours
 
     def test_protect_then_unlock_round_trip(self, sample_pdf_bytes):
         from pypdf import PdfReader
@@ -125,6 +128,8 @@ class TestPdfManipulateEngine:
         protected = self._run("pdf_protect", sample_pdf_bytes, password="secret123")
         result = self._run("pdf_unlock", protected.output_bytes, password="wrong")
         assert result.ok is False
+        # A wrong password is the user's mistake, not TweakHub's — no refund.
+        assert result.refundable is False
 
     def test_compress_produces_valid_pdf(self, sample_pdf_bytes):
         result = self._run("pdf_compress", sample_pdf_bytes)
@@ -151,6 +156,16 @@ class TestPdfManipulateEngine:
             result = self._run(tool, sample_pdf_bytes)
             assert result.ok is False
             assert "Not implemented" in result.error
+            # TweakHub hasn't built this yet — that's our doing, not the
+            # user's mistake, so still refundable.
+            assert result.refundable is True
+
+    def test_corrupted_pdf_input_is_not_refundable(self):
+        # pypdf can't parse this at all (PdfReadError/PyPdfError) — a
+        # malformed file the user uploaded, not a TweakHub bug.
+        result = self._run("pdf_rotate", b"not a real pdf file at all", angle=90)
+        assert result.ok is False
+        assert result.refundable is False
 
 
 # -- PdfGenerateEngine (pure Python — reportlab) --
@@ -190,6 +205,7 @@ class TestPdfGenerateEngine:
     def test_invalid_json_fails_cleanly(self):
         result = self.engine.process(io.BytesIO(b"not json"), {"tool_name": "invoice_generator"})
         assert result.ok is False
+        assert result.refundable is False  # malformed input payload — the user's mistake, not ours
 
 
 # -- MediaConvertEngine: pure-Python paths (Pillow / pypdf / openpyxl) --

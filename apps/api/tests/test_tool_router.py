@@ -44,6 +44,46 @@ def test_route_tool_unknown_engine_handler_is_clean():
     assert result.ok is False
 
 
+def test_caller_supplied_options_cannot_override_tool_name_or_engine_op():
+    """Regression test for a real bug: routes/tools.py passes the raw,
+    unvalidated `options` JSON request field straight through as
+    route_tool()'s `options` argument. If that dict merged in AFTER the
+    internal tool_name/engine_op keys (the original bug — a dict literal
+    with the internal keys spread first, then `**options` last), a caller
+    could post e.g. options={"tool_name": "video_compress"} against a
+    cheap, synchronous, low-credit tool sharing MediaConvertEngine and
+    have the engine actually run — and get billed, timed-out, and
+    sync-vs-async routed as — a completely different, far more expensive
+    tool (routes/tools.py prices/routes by the URL's tool_name, but the
+    engine dispatches on merged_options["tool_name"]). Confirm the
+    merged options route_tool() hands to the engine always reflect the
+    tool actually being billed, never a caller override."""
+    router = ToolRouter()
+    from PIL import Image
+
+    img = Image.new("RGB", (20, 20), (10, 20, 30))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+
+    # image_crop and video_compress both live on MediaConvertEngine
+    # (engine="convert"), so an override would actually reach a real,
+    # different handler rather than just erroring on an unknown engine.
+    assert router.get_tool_spec("image_crop").engine == router.get_tool_spec("video_compress").engine == "convert"
+
+    result = router.route_tool(
+        "image_crop",
+        io.BytesIO(buf.getvalue()),
+        {"tool_name": "video_compress", "engine_op": "video_compress_op", "crop_box": "0,0,10,10"},
+    )
+    # If the override had worked, MediaConvertEngine would have tried to
+    # run video_compress's ffmpeg handler against PNG bytes and failed
+    # loudly and differently (or, worse, "succeeded" at running the
+    # wrong, pricier tool). Getting a clean image_crop result back proves
+    # tool_name/engine_op won the merge, not the caller-supplied values.
+    assert result.ok, result.error
+    assert result.content_type == "image/png"
+
+
 def test_named_format_pair_gets_target_format_from_engine_op_alone():
     """png_to_jpg (and the rest of tools_catalog.py's "specific named
     pair" tools — see its module docstring) never requires the caller to

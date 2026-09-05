@@ -151,20 +151,29 @@ class LocalStorageBackend(StorageBackend):
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()
 
-    def _sign(self, key: str, expires_at: int) -> str:
-        message = f"{key}:{expires_at}".encode("utf-8")
+    def _sign(self, key: str, expires_at: int, filename: str | None = None) -> str:
+        # filename is part of the signed message (not just key/expires_at)
+        # so it can't be swapped out after the fact: without this, anyone
+        # holding a valid signed link for their own object could freely
+        # rewrite its `&filename=` query param to any value they want —
+        # the signature would still check out — spoofing the suggested
+        # save-as name in the Content-Disposition header (routes/
+        # files.py). ":" can't appear in a URL-safe filename we generate
+        # ourselves and isn't meaningfully more ambiguous here than it
+        # already is between key/expires_at.
+        message = f"{key}:{expires_at}:{filename or ''}".encode("utf-8")
         return hmac.new(self._secret, message, hashlib.sha256).hexdigest()
 
-    def verify(self, key: str, expires_at: int, signature: str) -> bool:
+    def verify(self, key: str, expires_at: int, signature: str, filename: str | None = None) -> bool:
         if time.time() > expires_at:
             return False
-        expected = self._sign(key, expires_at)
+        expected = self._sign(key, expires_at, filename)
         return hmac.compare_digest(expected, signature)
 
     def signed_url(self, key: str, expires_in: int, filename: str | None = None) -> str:
         settings = get_settings()
         expires_at = int(time.time()) + expires_in
-        signature = self._sign(key, expires_at)
+        signature = self._sign(key, expires_at, filename)
         url = f"{settings.api_url}/api/files/{key}?expires={expires_at}&sig={signature}"
         if filename:
             from urllib.parse import quote

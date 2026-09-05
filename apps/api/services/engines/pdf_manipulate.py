@@ -27,6 +27,7 @@ from typing import Any, BinaryIO
 
 import pikepdf
 from pypdf import PdfReader, PdfWriter
+from pypdf.errors import PyPdfError
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
@@ -86,6 +87,10 @@ class PdfManipulateEngine(Engine):
             return EngineResult(ok=False, error=f"PdfManipulateEngine has no handler for '{tool_name}'")
         try:
             return handler(input_data, options)
+        except (PyPdfError, pikepdf.PdfError) as exc:
+            # pypdf/pikepdf couldn't parse the uploaded file at all — a
+            # malformed/corrupted PDF, not a bug on our side. Not refundable.
+            return EngineResult(ok=False, error=f"{tool_name} failed: {exc}", refundable=False)
         except Exception as exc:  # noqa: BLE001 — surface as a clean engine error, not a 500
             return EngineResult(ok=False, error=f"{tool_name} failed: {exc}")
 
@@ -100,7 +105,10 @@ class PdfManipulateEngine(Engine):
     def _merge(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         extra_files: list[bytes] = options.get("extra_files") or []
         if not extra_files:
-            return EngineResult(ok=False, error="pdf_merge needs at least one file in options['extra_files']")
+            return EngineResult(
+                ok=False, error="pdf_merge needs at least one file in options['extra_files']",
+                refundable=False,
+            )
 
         writer = pikepdf.new()
         for raw in [input_data.read(), *extra_files]:
@@ -121,6 +129,23 @@ class PdfManipulateEngine(Engine):
         groups: list[list[int]]
         if page_ranges:
             groups = [_parse_page_spec(g, len(reader.pages)) for g in page_ranges.split(";")]
+            # _parse_page_spec silently drops out-of-range page numbers
+            # (see its docstring), so a group like "5-6" against a
+            # 3-page PDF parses to []. Writing that as a part would
+            # silently produce a valid-looking but empty 0-page PDF
+            # inside the zip, with `meta.parts` overcounting how many
+            # real outputs there are and nothing anywhere telling the
+            # caller a group matched no pages — _extract_pages() already
+            # guards the equivalent case; do the same here instead of
+            # writing empty parts.
+            empty = [g for g, indices in zip(page_ranges.split(";"), groups) if not indices]
+            if empty:
+                return EngineResult(
+                    ok=False,
+                    error=f"page_ranges group(s) matched no pages in a {len(reader.pages)}-page PDF: "
+                    + ", ".join(g.strip() for g in empty),
+                    refundable=False,
+                )
         else:
             groups = [[i] for i in range(len(reader.pages))]
 
@@ -142,12 +167,15 @@ class PdfManipulateEngine(Engine):
     def _extract_pages(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         pages_spec = options.get("pages")
         if not pages_spec:
-            return EngineResult(ok=False, error="pdf_extract_pages needs options['pages'], e.g. '1,3,5-7'")
+            return EngineResult(
+                ok=False, error="pdf_extract_pages needs options['pages'], e.g. '1,3,5-7'",
+                refundable=False,
+            )
 
         reader = PdfReader(input_data)
         indices = _parse_page_spec(pages_spec, len(reader.pages))
         if not indices:
-            return EngineResult(ok=False, error=f"No valid pages matched '{pages_spec}'")
+            return EngineResult(ok=False, error=f"No valid pages matched '{pages_spec}'", refundable=False)
 
         writer = PdfWriter()
         for idx in indices:
@@ -186,7 +214,7 @@ class PdfManipulateEngine(Engine):
     def _rotate(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         angle = int(options.get("angle", 90))
         if angle % 90 != 0:
-            return EngineResult(ok=False, error="angle must be a multiple of 90")
+            return EngineResult(ok=False, error="angle must be a multiple of 90", refundable=False)
 
         reader = PdfReader(input_data)
         writer = PdfWriter()
@@ -200,6 +228,18 @@ class PdfManipulateEngine(Engine):
 
     def _crop(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         margin_percent = float(options.get("margin_percent", 10))
+        # An unbounded margin_percent >= 50 shrinks the mediabox from
+        # both sides past the point where lower_left crosses
+        # upper_right, producing a negative-width/height (inverted)
+        # mediabox that pypdf writes without complaint — most viewers
+        # then render the page blank, garbled, or refuse to open it.
+        # Reject before that happens rather than silently corrupting
+        # every page of the output.
+        if not (0 <= margin_percent < 50):
+            return EngineResult(
+                ok=False, error="margin_percent must be between 0 and 50 (exclusive of 50)",
+                refundable=False,
+            )
         reader = PdfReader(input_data)
         writer = PdfWriter()
         for page in reader.pages:
@@ -237,7 +277,7 @@ class PdfManipulateEngine(Engine):
     def _protect(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         password = options.get("password")
         if not password:
-            return EngineResult(ok=False, error="pdf_protect needs options['password']")
+            return EngineResult(ok=False, error="pdf_protect needs options['password']", refundable=False)
 
         reader = PdfReader(input_data)
         writer = PdfWriter()
@@ -252,13 +292,13 @@ class PdfManipulateEngine(Engine):
     def _unlock(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         password = options.get("password")
         if not password:
-            return EngineResult(ok=False, error="pdf_unlock needs options['password']")
+            return EngineResult(ok=False, error="pdf_unlock needs options['password']", refundable=False)
 
         reader = PdfReader(input_data)
         if reader.is_encrypted:
             result = reader.decrypt(password)
             if result == 0:
-                return EngineResult(ok=False, error="Incorrect password")
+                return EngineResult(ok=False, error="Incorrect password", refundable=False)
 
         writer = PdfWriter()
         for page in reader.pages:
@@ -277,7 +317,7 @@ class PdfManipulateEngine(Engine):
                 return EngineResult(ok=True, output_bytes=buf.getvalue(), content_type="application/pdf",
                                      meta={"repaired_with": "pikepdf/qpdf"})
         except pikepdf.PdfError as exc:
-            return EngineResult(ok=False, error=f"Could not repair PDF: {exc}")
+            return EngineResult(ok=False, error=f"Could not repair PDF: {exc}", refundable=False)
 
     def _compress(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         raw = input_data.read()
@@ -298,14 +338,17 @@ class PdfManipulateEngine(Engine):
     def _organize(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
         order = options.get("order")  # 1-based list, e.g. [3, 1, 2]
         if not order:
-            return EngineResult(ok=False, error="pdf_organize needs options['order'], e.g. [3, 1, 2]")
+            return EngineResult(
+                ok=False, error="pdf_organize needs options['order'], e.g. [3, 1, 2]",
+                refundable=False,
+            )
 
         reader = PdfReader(input_data)
         writer = PdfWriter()
         for p in order:
             idx = int(p) - 1
             if not (0 <= idx < len(reader.pages)):
-                return EngineResult(ok=False, error=f"Page {p} out of range")
+                return EngineResult(ok=False, error=f"Page {p} out of range", refundable=False)
             writer.add_page(reader.pages[idx])
 
         buf = io.BytesIO()

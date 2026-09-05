@@ -102,9 +102,12 @@ def client(db_session, fake_rate_limiter, local_storage):
     fake Redis-backed rate limiter, so HTTP-level tests never touch a real
     Postgres or Redis. httpx's ASGITransport reports a fixed synthetic
     client address (127.0.0.1) for every request unless a test overrides
-    it with an X-Forwarded-For header — deps.get_client_ip() checks that
-    header first, same as it would behind the real nginx proxy in
-    infrastructure/nginx/nginx.conf."""
+    it with an X-Forwarded-For header — deps.get_client_ip() falls back to
+    that (its last comma-separated entry — see that function's docstring
+    for why not the first) when no X-Real-IP header is set, same as it
+    would behind the real nginx proxy in infrastructure/nginx/nginx.conf
+    for a request nginx itself didn't front (there isn't one in this
+    test setup, so X-Forwarded-For is what these tests use)."""
     from fastapi.testclient import TestClient
 
     from db import get_db

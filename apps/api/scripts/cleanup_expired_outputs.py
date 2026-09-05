@@ -19,10 +19,10 @@ Usage:
     cd apps/api && source .venv/bin/activate
     python -m scripts.cleanup_expired_outputs
 
-Meant to run on a schedule (hourly is reasonable given the 24-48h window)
-— there's no scheduler wired up in this repo yet, so add it to the VPS's
-crontab after deploy, e.g.:
-    0 * * * * cd /path/to/tweakhub/apps/api && .venv/bin/python -m scripts.cleanup_expired_outputs >> /var/log/tweakhub-cleanup.log 2>&1
+Runs on a schedule (hourly — more than frequent enough given the 24-48h
+window) via the dedicated `cleanup` service in
+infrastructure/docker/docker-compose.yml, which just loops this script
+inside the deployed stack itself — no host VPS crontab entry needed.
 """
 from __future__ import annotations
 

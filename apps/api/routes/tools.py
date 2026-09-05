@@ -215,11 +215,18 @@ async def process_tool(
     result = tool_router.route_tool(tool_name, io.BytesIO(raw), engine_options)
 
     if not result.ok:
-        credit_service.refund_credits(
-            db, user, tool_name, amount=job.credits_spent, note=f"Refund: {result.error}"
-        )
+        if result.refundable:
+            credit_service.refund_credits(
+                db, user, tool_name, amount=job.credits_spent, note=f"Refund: {result.error}",
+                original_transaction=tx,
+            )
+            job.error = result.error
+        else:
+            # Failure was caused by the input/options the user sent (bad
+            # password, corrupted file, invalid options, ...) — no refund,
+            # but say so on the job record so support/the user can see why.
+            job.error = f"{result.error} (not refunded: failure caused by input/options, not a TweakHub error)"
         job.status = JobStatus.FAILED
-        job.error = result.error
         job.finished_at = datetime.now(timezone.utc)
         db.add(job)
         db.commit()

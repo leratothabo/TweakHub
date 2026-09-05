@@ -22,7 +22,6 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from models import BankReferenceCounter, PaymentAttempt, PaymentMethod, PaymentStatus, User
-from . import ozow_service
 
 
 class PaymentServiceError(Exception):
@@ -164,46 +163,105 @@ class PaymentService:
         payment_url = f"{self.settings.dpo_api_base_url}/payv2.php?ID={token}"
         return attempt, payment_url
 
-    # -- Ozow (South African instant EFT, its own gateway) ---------------
+    # -- Paystack (https://paystack.com/docs/api) -------------------------
+    # Backend plumbing only, mirroring the DPO methods above's shape
+    # (initiate -> get a redirect/authorization target, verify -> a
+    # server-to-server status check). Not yet called from
+    # create_payment_attempt()/credit_service.initiate_purchase() or
+    # added to the PaymentMethod enum -- whether Paystack replaces DPO,
+    # sits alongside it, or stays unused is a separate decision. When
+    # that's made, wire these in the same way initiate_dpo_payment() /
+    # verify_dpo_payment() are wired into create_payment_attempt() and
+    # routes/payments.py's callback handler above -- in particular, keep
+    # verify_paystack_transaction() as the source of truth the way
+    # verify_dpo_payment() is; never grant credits off a client-reported
+    # "it worked" alone.
 
-    def create_ozow_attempt(
+    def initialize_paystack_transaction(
         self,
-        db: Session,
-        user: User,
-        package_key: str,
-        amount_usd: float,
-        amount_zar: float,
-        credits: int,
-        bank_reference: str,
-    ) -> tuple[PaymentAttempt, str]:
-        """Same shape as create_payment_attempt() above, but against Ozow
-        instead of DPO: create a PENDING row first (so a fast notify can't
-        race ahead of our own commit), then call Ozow with the row's own
-        id as TransactionReference — the same "our id is the thing we look
-        the row up by" pattern DPO's CompanyRef already uses. amount_usd
-        is stored on the row for display consistency with every other
-        method; Ozow itself is only ever charged amount_zar."""
-        attempt = PaymentAttempt(
-            user_id=user.id,
-            package_key=package_key,
-            amount_usd=amount_usd,
-            credits=credits,
-            method=PaymentMethod.OZOW,
-            status=PaymentStatus.PENDING,
-        )
-        db.add(attempt)
-        db.flush()  # get attempt.id without committing yet
+        email: str,
+        amount_kobo: int,
+        reference: str | None = None,
+        callback_url: str | None = None,
+    ) -> dict:
+        """
+        POST /transaction/initialize. amount_kobo is the charge in the
+        smallest unit of the transaction currency (kobo for NGN, cents
+        for USD/GHS/ZAR/KES, etc.) -- Paystack's API takes an integer
+        subunit amount, never a decimal major-unit amount, so convert
+        before calling this (e.g. amount_kobo = round(amount_usd * 100)).
 
-        payment_url, ozow_transaction_id = ozow_service.initiate_ozow_payment(
-            amount_zar=amount_zar,
-            transaction_reference=attempt.id,
-            bank_reference=bank_reference,
-        )
-        attempt.ozow_transaction_id = ozow_transaction_id
-        db.commit()
-        db.refresh(attempt)
+        Returns the response's `data` object on success:
+        {"authorization_url": ..., "access_code": ..., "reference": ...}
+        -- authorization_url is where the browser should be sent to pay;
+        access_code is what a client-side PaystackPop.resumeTransaction()
+        would use instead, if a JS-popup flow gets built later.
+        """
+        if not self.settings.paystack_secret_key:
+            raise PaymentServiceError("PAYSTACK_SECRET_KEY is not configured")
+        if amount_kobo <= 0:
+            raise PaymentServiceError("amount_kobo must be a positive integer")
 
-        return attempt, payment_url
+        payload: dict = {"email": email, "amount": str(amount_kobo)}
+        if reference:
+            payload["reference"] = reference
+        if callback_url:
+            payload["callback_url"] = callback_url
+
+        try:
+            response = httpx.post(
+                f"{self.settings.paystack_base_url}/transaction/initialize",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {self.settings.paystack_secret_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PaymentServiceError(f"Paystack initialize request failed: {exc}") from exc
+
+        body = response.json()
+        if not body.get("status"):
+            raise PaymentServiceError(f"Paystack initialize failed: {body.get('message', 'Unknown error')}")
+
+        data = body.get("data") or {}
+        if not data.get("authorization_url") or not data.get("reference"):
+            raise PaymentServiceError("Paystack initialize response missing authorization_url/reference")
+        return data
+
+    def verify_paystack_transaction(self, reference: str) -> dict:
+        """
+        GET /transaction/verify/:reference -- the server-to-server check
+        that actually confirms a payment. Returns the response's `data`
+        object; callers must check data["status"] == "success" themselves
+        before granting anything (a "abandoned"/"failed"/"pending" status
+        is a valid, non-error response here, not an exception).
+        """
+        if not self.settings.paystack_secret_key:
+            raise PaymentServiceError("PAYSTACK_SECRET_KEY is not configured")
+        if not reference:
+            raise PaymentServiceError("reference is required")
+
+        try:
+            response = httpx.get(
+                f"{self.settings.paystack_base_url}/transaction/verify/{reference}",
+                headers={"Authorization": f"Bearer {self.settings.paystack_secret_key}"},
+                timeout=30,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PaymentServiceError(f"Paystack verify request failed: {exc}") from exc
+
+        body = response.json()
+        if not body.get("status"):
+            raise PaymentServiceError(f"Paystack verify failed: {body.get('message', 'Unknown error')}")
+
+        data = body.get("data") or {}
+        if not data.get("status"):
+            raise PaymentServiceError("Paystack verify response missing data.status")
+        return data
 
     # -- Direct bank transfer (no DPO involved) --------------------------
 

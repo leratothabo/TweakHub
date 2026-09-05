@@ -55,7 +55,21 @@ class ToolRouter:
         # the derived keys below exist as a convenience for engines that
         # only need "what operation" without caring which specific tool
         # asked for it (e.g. GenerateEngine only cares about `template`).
-        merged_options = {"tool_name": tool_name, "engine_op": spec.engine_op, **(options or {})}
+        #
+        # `tool_name`/`engine_op` are spread LAST so they can never be
+        # overridden by caller-supplied `options` (routes/tools.py passes
+        # the raw, unvalidated JSON `options` request field straight
+        # through as `options` here). Getting the spread order backwards
+        # let a request post e.g. options={"tool_name": "video_compress"}
+        # against a cheap, synchronous, low-credit tool sharing the same
+        # engine and have the engine actually run — and get billed/
+        # timed-out/routed sync-vs-async as — a completely different,
+        # far more expensive tool. `tool_name` also drives per-tool
+        # subprocess timeouts (see media_convert.py's uses of
+        # get_subprocess_timeout_seconds(options.get("tool_name"))), so an
+        # override didn't just bypass pricing, it could also run
+        # expensive work under a cheaper tool's timeout budget.
+        merged_options = {**(options or {}), "tool_name": tool_name, "engine_op": spec.engine_op}
         if spec.engine == "convert" and "=" in spec.engine_op:
             key, _, value = spec.engine_op.partition("=")
             merged_options.setdefault(key, value)

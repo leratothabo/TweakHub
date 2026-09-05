@@ -7,15 +7,38 @@ job_id to poll via GET /api/jobs/{id}. GET /api/files/{key} is the signed
 download link both paths end up pointing at for the local storage
 backend.
 
-Async tests set JOB_QUEUE_SYNCHRONOUS=true (services/job_queue.py) so
-they don't need a separate `rq worker` process — see test_job_queue.py
-for coverage of the real enqueue/dequeue plumbing itself.
+Most async tests set JOB_QUEUE_SYNCHRONOUS=true (services/job_queue.py)
+so they don't need a separate `rq worker` process. The two tests that
+exercise the real 202-then-poll flow deliberately leave that unset, so
+they enqueue through real RQ against a real Redis — see test_job_queue.py
+for the dedicated coverage of that enqueue/dequeue plumbing, and
+conftest.py's needs_redis for why they're skipped (not failed) when no
+Redis is reachable.
 """
 import os
 import sys
 from urllib.parse import urlparse
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from config import get_settings  # noqa: E402
+
+
+def _redis_reachable() -> bool:
+    import redis
+
+    try:
+        redis.Redis.from_url(get_settings().redis_url, socket_connect_timeout=1).ping()
+        return True
+    except redis.RedisError:
+        return False
+
+
+needs_redis = pytest.mark.skipif(
+    not _redis_reachable(), reason="Redis not reachable at REDIS_URL"
+)
 
 
 def _signup_and_login(client, email="tools-route@example.com"):
@@ -72,6 +95,48 @@ def test_sync_tool_failure_still_records_a_failed_job(client):
     assert "Processing failed" in resp.json()["detail"]
 
 
+def test_sync_tool_failure_with_bad_input_does_not_refund_credits(client):
+    """A failure caused by the file the user uploaded (here: not a real
+    image at all — Pillow can't identify it) is not TweakHub's fault, so
+    no refund — see EngineResult.refundable and media_convert.py's
+    process()."""
+    headers = _signup_and_login(client, email="tools-route-fail-no-refund@example.com")
+
+    balance_before = client.get("/api/credits/balance", headers=headers).json()["credit_balance"]
+
+    resp = client.post(
+        "/api/tools/image_convert/process",
+        files={"file": ("in.png", b"not a real image", "image/png")},
+        data={"options": '{"target_format": "png"}'},
+        headers=headers,
+    )
+    assert resp.status_code == 502
+
+    balance_after = client.get("/api/credits/balance", headers=headers).json()["credit_balance"]
+    assert balance_after < balance_before  # spent, and NOT refunded
+
+
+def test_sync_tool_failure_engine_error_still_refunds_credits(client, sample_pdf_bytes):
+    """A failure that's TweakHub's own doing (here: pdf_sign, a documented
+    not-yet-implemented tool — see pdf_manipulate.py — which always fails
+    with EngineResult.refundable defaulting True) still refunds the
+    credits it spent."""
+    headers = _signup_and_login(client, email="tools-route-fail-refund@example.com")
+
+    balance_before = client.get("/api/credits/balance", headers=headers).json()["credit_balance"]
+
+    resp = client.post(
+        "/api/tools/pdf_sign/process",
+        files={"file": ("in.pdf", sample_pdf_bytes, "application/pdf")},
+        headers=headers,
+    )
+    assert resp.status_code == 502
+
+    balance_after = client.get("/api/credits/balance", headers=headers).json()["credit_balance"]
+    assert balance_after == balance_before  # refunded back to where it started
+
+
+@needs_redis
 def test_async_tool_returns_202_then_resolves_via_job_polling(client):
     # Deliberately does NOT use JOB_QUEUE_SYNCHRONOUS=true here: that runs
     # the worker function inline inside enqueue_processing_job(), which —
@@ -108,6 +173,7 @@ def test_async_tool_returns_202_then_resolves_via_job_polling(client):
     assert job_body["download_url"]
 
 
+@needs_redis
 def test_async_tool_without_synchronous_queue_returns_202_pending(client, override_settings):
     # Default: job_queue_synchronous=False — nothing actually processes
     # it (no worker running in tests), so the response should be a

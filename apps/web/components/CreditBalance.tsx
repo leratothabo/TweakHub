@@ -25,7 +25,7 @@ export default function CreditBalance({ token }: { token: string | null }) {
   }
 
   return (
-    <div style={styles.pill} className="tabular-nums">
+    <div style={styles.pill}>
       <span style={styles.dot} />
       {balance === null ? "…" : `${balance.toLocaleString()} credits`}
     </div>

@@ -21,13 +21,15 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from config import get_settings
 from db import get_db
 from deps import get_client_ip, get_current_user, rate_limit
 from models import PaymentAttempt, PaymentMethod, PaymentStatus, User
-from services import credit_service, ozow_service, payment_service
+from services import credit_service, payment_service
+from services.payment_service import PaymentServiceError
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 logger = logging.getLogger("tweakhub.payments")
@@ -92,73 +94,72 @@ def payment_callback(transaction_token: str, db: Session = Depends(get_db)):
 
     user = db.get(User, attempt.user_id)
     if user is not None and not attempt.credits_granted:
-        credit_service.grant_purchased_credits(db, user, attempt)
+        try:
+            credit_service.grant_purchased_credits(db, user, attempt)
+        except ValueError:
+            # Lost the race to a concurrent call for the same attempt —
+            # DPO's browser-redirect callback and its server-to-server
+            # webhook can both land here for the same payment at nearly
+            # the same moment (see this module's docstring). The other
+            # caller already granted the credits; this is a benign no-op,
+            # not an error.
+            pass
 
     return {"status": attempt.status.value, "credits_granted": True}
 
 
-@router.post(
-    "/ozow/notify",
-    dependencies=[Depends(rate_limit("payments_callback", "rate_limit_payments_callback_per_hour"))],
-)
-async def ozow_notify(request: Request, db: Session = Depends(get_db)):
+class PaystackInitializeRequest(BaseModel):
+    # Smallest-unit amount (kobo for NGN, cents for USD/ZAR/KES/GHS...),
+    # matching Paystack's own API shape -- callers are responsible for
+    # converting from a decimal major-unit amount before sending this.
+    amount_kobo: int
+    reference: str | None = None
+
+
+@router.post("/paystack/initialize")
+def paystack_initialize(
+    payload: PaystackInitializeRequest,
+    user: User = Depends(get_current_user),
+):
     """
-    Ozow's notify webhook (services/ozow_service.py's NotifyUrl). Ozow
-    POSTs form-encoded fields, not JSON — read via request.form() rather
-    than assuming a Pydantic body model the way most other routes here
-    do.
-
-    Trust model, deliberately different from the DPO callback above: a
-    verified HashCheck is itself a signature only someone holding
-    OZOW_PRIVATE_KEY could produce, so (unlike DPO, whose callback this
-    codebase never trusts on its own) a *matching* hash is credited
-    directly with no extra round trip. A *mismatched* hash is NOT treated
-    as proof of a forged callback, though — see verify_notify_hash's
-    docstring for why the notify hash's exact field set is a genuine open
-    question, not a confirmed one the way the request-side hash is — so a
-    mismatch here just logs loudly and leaves the row PENDING for manual
-    reconciliation instead of either crediting or hard-rejecting.
+    Standalone Paystack plumbing (services/payment_service.py's
+    initialize_paystack_transaction) -- not yet wired into
+    credit_service.initiate_purchase() or the PaymentMethod enum
+    alongside DPO above; see payment_service.py's Paystack section for
+    why. Charges the signed-in user's own account email; the browser
+    should be redirected to the returned authorization_url to complete
+    payment, then poll/land on paystack_verify below.
     """
-    form = await request.form()
-    payload = dict(form)
-
-    transaction_reference = payload.get("TransactionReference")
-    if not transaction_reference:
-        raise HTTPException(status_code=400, detail="Missing TransactionReference")
-
-    attempt = db.get(PaymentAttempt, transaction_reference)
-    if attempt is None or attempt.method != PaymentMethod.OZOW:
-        raise HTTPException(status_code=404, detail="Unknown payment attempt")
-
-    if attempt.status == PaymentStatus.SUCCEEDED:
-        return {"status": attempt.status.value, "credits_granted": attempt.credits_granted}
-
-    if not ozow_service.verify_notify_hash(payload):
-        logger.error(
-            "Ozow notify HashCheck did not match for attempt %s — leaving PENDING for manual "
-            "review rather than crediting or hard-rejecting (see ozow_service.verify_notify_hash's "
-            "docstring)",
-            attempt.id,
+    try:
+        data = payment_service.initialize_paystack_transaction(
+            email=user.email,
+            amount_kobo=payload.amount_kobo,
+            reference=payload.reference,
+            callback_url=f"{get_settings().base_url}/payment-callback",
         )
-        return {"status": attempt.status.value, "credits_granted": False}
+    except PaymentServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return data
 
-    status = str(payload.get("Status", ""))
-    if status != "Complete":
-        attempt.status = PaymentStatus.FAILED if status in ("Cancelled", "Error") else attempt.status
-        db.add(attempt)
-        db.commit()
-        return {"status": attempt.status.value, "credits_granted": False}
 
-    attempt.status = PaymentStatus.SUCCEEDED
-    db.add(attempt)
-    db.commit()
-    db.refresh(attempt)
-
-    user = db.get(User, attempt.user_id)
-    if user is not None and not attempt.credits_granted:
-        credit_service.grant_purchased_credits(db, user, attempt)
-
-    return {"status": attempt.status.value, "credits_granted": True}
+@router.get("/paystack/verify/{reference}")
+def paystack_verify(
+    reference: str,
+    user: User = Depends(get_current_user),
+):
+    """
+    Server-to-server verification (services/payment_service.py's
+    verify_paystack_transaction) -- the source of truth for whether a
+    Paystack payment actually succeeded. Returns Paystack's own `data`
+    object as-is (status/amount/currency/...); this route does not grant
+    credits or touch PaymentAttempt yet -- see the module-level note on
+    paystack_initialize above.
+    """
+    try:
+        data = payment_service.verify_paystack_transaction(reference)
+    except PaymentServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return data
 
 
 @router.get("/bank-transfer/{attempt_id}/invoice")

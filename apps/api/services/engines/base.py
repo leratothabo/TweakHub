@@ -27,6 +27,19 @@ class EngineResult:
     content_type: str | None = None
     error: str | None = None
     meta: dict[str, Any] = field(default_factory=dict)
+    # Only meaningful when ok=False. Whether the credits spent on this run
+    # should be refunded — True (the default) for anything that looks like
+    # TweakHub's own fault (an engine crash, a missing dependency, a
+    # subprocess failing for reasons unrelated to the input), False for a
+    # failure caused by the input/options the user chose to send (wrong
+    # password, a corrupted/unparseable file, an unsupported format,
+    # invalid or missing options, a missing file in a multi-file op). The
+    # default of True preserves the pre-existing "always refund on
+    # failure" behavior for every site that hasn't been reviewed and
+    # explicitly marked otherwise. See routes/tools.py and
+    # services/job_worker.py's _fail_job, the two call sites that read
+    # this to decide whether to call credit_service.refund_credits().
+    refundable: bool = True
 
 
 class Engine(ABC):

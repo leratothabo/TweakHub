@@ -29,8 +29,7 @@ export type PaymentMethod =
   | "orange_money"
   | "mpesa"
   | "wave"
-  | "bank_transfer"
-  | "ozow";
+  | "bank_transfer";
 
 export interface BankTransferDetails {
   payee_name: string;
@@ -41,25 +40,14 @@ export interface BankTransferDetails {
 
 /**
  * What POST /api/credits/purchase returns — the shape differs by
- * `payment_method`: "dpo" (card/mobile-money methods) and "ozow" both
- * redirect the browser to `payment_url` (two different gateways, same
- * shape here); "bank_transfer" is a direct EFT with no redirect at all,
- * so it comes back with the reference + bank details to show instead.
- * See services/credit_service.py's initiate_purchase().
+ * `payment_method`: "dpo" (every method except bank_transfer) redirects
+ * the browser to `payment_url`; "bank_transfer" is a direct EFT with no
+ * redirect at all, so it comes back with the reference + bank details to
+ * show instead. See services/credit_service.py's initiate_purchase().
  */
 export type PurchaseResult =
   | {
       payment_method: "dpo";
-      payment_attempt_id: string;
-      payment_url: string;
-      credits: number;
-      amount_usd: number;
-    }
-  | {
-      // Ozow (South African instant EFT) — its own gateway, not routed
-      // through DPO, but the same "redirect to payment_url" shape as the
-      // dpo case above. See services/ozow_service.py.
-      payment_method: "ozow";
       payment_attempt_id: string;
       payment_url: string;
       credits: number;

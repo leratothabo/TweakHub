@@ -42,6 +42,20 @@ this — verified separately. If a `pdf_to_word` output needs reliable
 plain-text extraction, use `pdf_to_text` (media_convert.py's
 pypdf-based handler, unaffected — reads the original PDF directly) or
 `pdf_to_markdown`, not a pdf_to_word → docx_to_txt/odt_to_txt chain.
+
+Known limitation, not a bug: `xls_to_csv`/`ods_to_csv` (both routed
+through LibreOffice's "Text - txt - csv (StarCalc)" export filter, like
+every entry in _LIBREOFFICE_JOBS below) export only the workbook's
+*first* sheet — verified empirically against a real 2-sheet workbook:
+exit code 0, a valid CSV, sheet 2's rows simply absent, no warning
+anywhere. This is inherent to the CSV format itself (it has no concept
+of multiple sheets, and this filter doesn't concatenate or otherwise
+represent additional sheets), not something a different LibreOffice
+invocation fixes — media_convert.py's openpyxl-based `_xlsx_to_csv` has
+the identical limitation for the same reason, and surfaces it via
+`meta.sheets_total`/`meta.sheets_exported` on its EngineResult. A
+multi-tab spreadsheet that needs every sheet preserved should go through
+`excel_to_pdf`/`xlsx_to_ods` instead, not a `*_to_csv` tool.
 """
 from __future__ import annotations
 
@@ -51,6 +65,7 @@ from typing import Any, BinaryIO
 
 import markdown as md
 from pypdf import PdfReader
+from pypdf.errors import PyPdfError
 
 from ._util import run, scratch_dir
 from .base import Engine, EngineResult
@@ -163,6 +178,10 @@ class DocumentConvertEngine(Engine):
             return EngineResult(ok=False, error=f"DocumentConvertEngine has no handler for '{tool_name}'")
         try:
             return handler(input_data, options)
+        except PyPdfError as exc:
+            # pypdf couldn't parse the uploaded file at all (pdf_to_markdown's
+            # PdfReader) — a malformed/corrupted PDF, not a bug on our side.
+            return EngineResult(ok=False, error=f"{tool_name} failed: {exc}", refundable=False)
         except Exception as exc:  # noqa: BLE001
             return EngineResult(ok=False, error=f"{tool_name} failed: {exc}")
 
@@ -198,7 +217,12 @@ class DocumentConvertEngine(Engine):
 
             produced = list(out_dir.glob(f"*.{out_ext}"))
             if not produced:
-                return EngineResult(ok=False, error="LibreOffice produced no output file")
+                # soffice exited 0 but wrote nothing — in practice this means
+                # it couldn't actually read the source as a `{src_ext}` file
+                # (wrong/corrupted content for the claimed extension), not an
+                # engine crash (that would already be a non-zero exit, caught
+                # above by run()'s SubprocessError).
+                return EngineResult(ok=False, error="LibreOffice produced no output file", refundable=False)
 
             mime = {
                 "pdf": "application/pdf",
@@ -231,7 +255,10 @@ class DocumentConvertEngine(Engine):
 
             produced = list(out_dir.glob("*.docx"))
             if not produced:
-                return EngineResult(ok=False, error="LibreOffice produced no .docx output")
+                # Same reasoning as _libreoffice_convert's identical check —
+                # soffice exited 0 but produced nothing, which in practice
+                # means it couldn't actually read the uploaded file as a PDF.
+                return EngineResult(ok=False, error="LibreOffice produced no .docx output", refundable=False)
             return EngineResult(
                 ok=True, output_bytes=produced[0].read_bytes(),
                 content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -280,7 +307,7 @@ class DocumentConvertEngine(Engine):
             run(["pdftohtml", "-noframes", str(src), str(out)], timeout=60)
             html_file = out.with_suffix(".html")
             if not html_file.exists():
-                return EngineResult(ok=False, error="pdftohtml produced no output")
+                return EngineResult(ok=False, error="pdftohtml produced no output", refundable=False)
             return EngineResult(ok=True, output_bytes=html_file.read_bytes(), content_type="text/html")
 
     def _pdf_to_markdown(self, input_data: BinaryIO, options: dict[str, Any]) -> EngineResult:
@@ -307,7 +334,10 @@ class DocumentConvertEngine(Engine):
 
             page_images = sorted(d.glob("page-*.png"))
             if not page_images:
-                return EngineResult(ok=False, error="Could not rasterize PDF for OCR")
+                # pdftoppm exited 0 but rasterized zero pages — same signal
+                # as media_convert.py's _pdf_to_image: the uploaded file
+                # isn't a valid/readable PDF, not an engine problem.
+                return EngineResult(ok=False, error="Could not rasterize PDF for OCR", refundable=False)
 
             page_pdfs = []
             for img in page_images:

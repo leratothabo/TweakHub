@@ -7,6 +7,9 @@ here, the actual counting there).
 """
 from __future__ import annotations
 
+import re
+from datetime import datetime, timedelta, timezone
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -19,10 +22,38 @@ from services.rate_limiter import get_rate_limiter
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+_DURATION_RE = re.compile(r"^(\d+)([smhdw])$")
+_DURATION_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
+
+
+def _parse_duration(value: str) -> timedelta:
+    """Parse a short duration string like "7d"/"24h"/"30m" (config.py's
+    JWT_EXPIRES_IN format) into a timedelta. Falls back to a hardcoded
+    7-day default on anything that doesn't match that shape, rather than
+    silently minting a token with no expiry at all if the setting is
+    ever misconfigured."""
+    match = _DURATION_RE.match(value.strip())
+    if not match:
+        return timedelta(days=7)
+    amount, unit = match.groups()
+    return timedelta(**{_DURATION_UNITS[unit]: int(amount)})
+
 
 def create_access_token(user_id: str) -> str:
     settings = get_settings()
-    return jwt.encode({"sub": user_id}, settings.jwt_secret, algorithm="HS256")
+    # JWT_EXPIRES_IN (config.py) was declared but never actually read
+    # anywhere — tokens were minted with no "exp" claim at all, so once
+    # issued one was valid forever: a token that leaked once (XSS,
+    # browser history, a shared machine) stayed usable indefinitely, and
+    # auth_service.reset_password() rotating the password hash didn't
+    # revoke any already-issued token either, since there was no expiry
+    # to have expired. python-jose's jwt.decode() only enforces `exp`
+    # when the claim is present, so adding it here is enough — no change
+    # needed on the decode side in get_current_user() below.
+    expires_at = datetime.now(timezone.utc) + _parse_duration(settings.jwt_expires_in)
+    return jwt.encode(
+        {"sub": user_id, "exp": int(expires_at.timestamp())}, settings.jwt_secret, algorithm="HS256"
+    )
 
 
 def get_current_user(
@@ -62,19 +93,39 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
 
 def get_client_ip(request: Request) -> str:
     """Best-effort client IP for rate-limit keys. `infrastructure/nginx/
-    nginx.conf` sets X-Forwarded-For on every request that reaches the API,
-    since nginx is always the thing directly in front of it in this repo's
-    deploy path — trusting that header here is safe *because* of that,
+    nginx.conf` sets both of these on every request that reaches the API,
+    since nginx is always the thing directly in front of it in this
+    repo's deploy path — trusting them here is safe *because* of that,
     not in general (an API exposed directly to the internet without a
     reverse proxy in front of it should not trust client-supplied
-    headers). Falls back to the raw connection address for local dev,
-    where there's no nginx in the loop."""
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
+    headers).
+
+    X-Real-IP is checked first and is fully trustworthy: nginx's
+    `proxy_set_header X-Real-IP $remote_addr` REPLACES whatever the
+    client sent (nginx's proxy_set_header always overwrites the header,
+    never appends to it), so this can't be attacker-controlled.
+
+    X-Forwarded-For is the fallback, and the LAST comma-separated entry
+    is used, not the first. nginx sets it via
+    `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`, and
+    that variable APPENDS the real connecting IP onto whatever the
+    client already sent, rather than replacing it — a request arriving
+    with "X-Forwarded-For: 1.2.3.4" reaches this code as
+    "X-Forwarded-For: 1.2.3.4, <the real client IP>". Taking the first
+    entry (the previous behavior here) let any client fully control its
+    own rate-limit/log key by sending an arbitrary X-Forwarded-For value
+    — defeating the signup/login/password-reset/tool-process rate limits
+    entirely by varying that one header per request. The last entry is
+    the one nginx itself appended and isn't attacker-controlled.
+
+    Falls back to the raw connection address for local dev, where
+    there's no nginx in the loop and neither header is set."""
     real_ip = request.headers.get("x-real-ip")
     if real_ip:
         return real_ip.strip()
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
 
 

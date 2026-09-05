@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from models import CreditTransaction, CreditTransactionType, Organization, PaymentMethod, User
+from models import CreditTransaction, CreditTransactionType, Organization, PaymentAttempt, PaymentMethod, User
 from . import organization_service
 from .payment_service import BANK_TRANSFER_DETAILS, payment_service
 from .tools_catalog import get_tool
@@ -84,10 +84,54 @@ class CreditService:
         db.refresh(tx)
         return tx
 
-    def refund_credits(self, db: Session, user: User, tool_name: str, amount: int, note: str) -> CreditTransaction:
+    def refund_credits(
+        self,
+        db: Session,
+        user: User,
+        tool_name: str,
+        amount: int,
+        note: str,
+        original_transaction: CreditTransaction | None = None,
+    ) -> CreditTransaction:
         """Return credits for a failed job — to whichever pool
-        spend_credits() originally charged (the user's org, if any)."""
-        target = self._billing_target(db, user)
+        spend_credits() *actually* charged, not whatever _billing_target()
+        resolves to *right now*.
+
+        Those can disagree: an async job can sit in the queue for minutes
+        (see tool_timeouts.py), and org membership can change in that
+        window — a member can be removed, or a user can join/leave an org
+        — between when spend_credits() debited a pool and when the job
+        later fails and gets refunded. Re-deriving the target at refund
+        time silently moved credits from the org that was actually
+        charged into whatever pool the user happens to belong to *now*
+        (or vice versa), permanently draining the real payer and handing
+        a free refund to an unrelated pool. Pass the original spend
+        CreditTransaction (both call sites — routes/tools.py's sync path
+        and job_worker.py's _fail_job — have it via
+        ProcessingJob.credit_transaction_id) so the refund follows the
+        transaction's own recorded organization_id instead.
+        """
+        if original_transaction is not None:
+            if original_transaction.organization_id:
+                target: User | Organization = (
+                    db.get(Organization, original_transaction.organization_id)
+                    # The org could have been deleted since the original
+                    # spend (no cascade/delete path exists today, but
+                    # don't assume that forever) — fall back to the
+                    # best-effort current resolution rather than crash.
+                    or self._billing_target(db, user)
+                )
+            else:
+                # Originally billed to the user personally — refund that
+                # same user directly, not whatever org they might have
+                # joined since.
+                target = db.get(User, original_transaction.user_id) or user
+        else:
+            # No original transaction available (a caller that predates
+            # this parameter, or a manual/administrative refund with no
+            # specific job behind it) — best-effort, same as before.
+            target = self._billing_target(db, user)
+
         target.credit_balance += amount
         tx = CreditTransaction(
             user_id=user.id,
@@ -129,12 +173,11 @@ class CreditService:
     def initiate_purchase(self, db: Session, user: User, package_key: str, method: PaymentMethod) -> dict:
         """Kick off a credit-package purchase. BANK_TRANSFER is a direct
         EFT — no gateway, no payment_url, credits granted only once an
-        admin confirms the deposit (routes/admin.py). OZOW is its own
-        instant-EFT gateway — a payment_url like DPO's, but credited off
-        its own notify webhook (routes/payments.py's ozow_notify), not
-        DPO's. Every other method goes through DPO — credits granted only
-        after webhook/callback confirmation. The `payment_method` key is
-        what the frontend branches on to tell these apart."""
+        admin confirms the deposit (routes/admin.py). Every other method
+        goes through DPO — credits granted only after webhook/callback
+        confirmation (routes/payments.py). The `payment_method` key is
+        what the frontend branches on to decide which of those two
+        responses it got."""
         package = CREDIT_PACKAGES.get(package_key)
         if package is None:
             raise ValueError(f"Unknown credit package: {package_key}")
@@ -152,24 +195,6 @@ class CreditService:
                 "payment_method": "bank_transfer",
                 "bank_reference": attempt.bank_reference,
                 "bank_details": BANK_TRANSFER_DETAILS,
-                "credits": package["credits"],
-                "amount_usd": package["price_usd"],
-            }
-
-        if method == PaymentMethod.OZOW:
-            attempt, payment_url = payment_service.create_ozow_attempt(
-                db=db,
-                user=user,
-                package_key=package_key,
-                amount_usd=package["price_usd"],
-                amount_zar=package["price_zar"],
-                credits=package["credits"],
-                bank_reference=f"TweakHub {package['credits']} credits",
-            )
-            return {
-                "payment_attempt_id": attempt.id,
-                "payment_method": "ozow",
-                "payment_url": payment_url,
                 "credits": package["credits"],
                 "amount_usd": package["price_usd"],
             }
@@ -192,8 +217,33 @@ class CreditService:
         }
 
     def grant_purchased_credits(self, db: Session, user: User, attempt) -> CreditTransaction:
-        """Called once a PaymentAttempt is confirmed SUCCEEDED by the DPO webhook — never speculatively."""
-        if attempt.credits_granted:
+        """Called once a PaymentAttempt is confirmed SUCCEEDED by the DPO
+        webhook or an admin bank-transfer confirmation — never
+        speculatively.
+
+        Guards with an atomic conditional UPDATE, not a Python
+        check-then-act on `attempt.credits_granted`. routes/payments.py's
+        own docstring documents that DPO's browser redirect and its
+        server-to-server webhook both land on the same endpoint for the
+        same payment — i.e. two concurrent callers loading the same
+        PENDING/just-SUCCEEDED attempt row is the normal case here, not a
+        rare edge case, and the same double-click risk exists for
+        routes/admin.py's manual confirm. Under a plain `if
+        attempt.credits_granted: raise`, two requests that both load the
+        row before either commits would both see `credits_granted=False`
+        and both grant credits. The UPDATE's WHERE clause re-checks
+        credits_granted at write time (which takes a row lock), so only
+        one of two racing callers gets `rowcount == 1`; the other gets 0
+        and raises the same ValueError it always did — the caller just
+        needs to treat that as "someone else already granted it," not a
+        real error (see routes/payments.py and routes/admin.py)."""
+        updated = (
+            db.query(PaymentAttempt)
+            .filter(PaymentAttempt.id == attempt.id, PaymentAttempt.credits_granted.is_(False))
+            .update({"credits_granted": True}, synchronize_session=False)
+        )
+        if updated == 0:
+            db.rollback()
             raise ValueError(f"Credits already granted for payment_attempt {attempt.id}")
 
         user.credit_balance += attempt.credits

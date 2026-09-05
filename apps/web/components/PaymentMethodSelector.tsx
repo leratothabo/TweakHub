@@ -9,7 +9,6 @@ const METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "mpesa", label: "M-Pesa" },
   { value: "orange_money", label: "Orange Money" },
   { value: "wave", label: "Wave" },
-  { value: "ozow", label: "Ozow (Instant EFT)" },
   { value: "bank_transfer", label: "Bank Transfer" },
 ];
 
@@ -18,7 +17,7 @@ interface Props {
   onChange: (method: PaymentMethod) => void;
 }
 
-/** Payment method picker — DPO Group's supported rails, plus Ozow (South African instant EFT, its own gateway) and the direct bank-transfer option, neither of which go through DPO. */
+/** Payment method picker for DPO Group's supported rails. */
 export default function PaymentMethodSelector({ value, onChange }: Props) {
   return (
     <div style={styles.row}>

@@ -10,8 +10,6 @@ interface Props {
   currency?: "usd" | "zar";
 }
 
-const PACKAGE_ORDER = ["starter", "popular", "pro", "business"];
-
 /** Credit package picker + purchase flow. Every method except bank_transfer
  * redirects to DPO's hosted payment page; bank_transfer has no gateway to
  * redirect to, so it renders BankTransferInstructions in place instead —
@@ -49,38 +47,31 @@ export default function CreditPackages({ token, currency = "usd" }: Props) {
     }
   }
 
-  const entries = Object.entries(packages).sort(
-    (a, b) => PACKAGE_ORDER.indexOf(a[0]) - PACKAGE_ORDER.indexOf(b[0])
-  );
-
   return (
     <div>
-      <div className="pricing-grid">
-        {entries.map(([key, pkg]) => {
-          const isPopular = key === "popular";
-          const active = selected === key;
-          return (
-            <button
-              key={key}
-              onClick={() => setSelected(key)}
-              className={`card card-hover pricing-card${isPopular ? " pricing-card-popular" : ""}`}
-              style={{ borderColor: active ? "var(--accent-2)" : undefined }}
-            >
-              {isPopular && <span className="pricing-badge">Most popular</span>}
-              <div className="pricing-label">{key}</div>
-              <div className="pricing-price tabular-nums">
-                {currency === "usd" ? `$${pkg.price_usd}` : `R${pkg.price_zar}`}
-              </div>
-              <div className="pricing-credits tabular-nums">{pkg.credits.toLocaleString()} credits</div>
-            </button>
-          );
-        })}
+      <div style={styles.grid}>
+        {Object.entries(packages).map(([key, pkg]) => (
+          <button
+            key={key}
+            onClick={() => setSelected(key)}
+            style={{
+              ...styles.card,
+              borderColor: selected === key ? "var(--accent)" : "var(--border)",
+            }}
+          >
+            <div style={styles.credits}>{pkg.credits.toLocaleString()} credits</div>
+            <div style={styles.price}>
+              {currency === "usd" ? `$${pkg.price_usd}` : `R${pkg.price_zar}`}
+            </div>
+            <div style={styles.label}>{key}</div>
+          </button>
+        ))}
       </div>
 
       {selected && (
-        <div style={{ marginTop: 24 }}>
+        <div style={{ marginTop: 20 }}>
           <PaymentMethodSelector value={method} onChange={setMethod} />
-          <button disabled={!token || busy} onClick={buy} className="btn btn-primary">
+          <button disabled={!token || busy} onClick={buy} style={styles.buyButton}>
             {busy
               ? method === "bank_transfer"
                 ? "Preparing…"
@@ -89,7 +80,7 @@ export default function CreditPackages({ token, currency = "usd" }: Props) {
                 ? "Buy credits"
                 : "Sign in to buy"}
           </button>
-          {error && <p style={{ color: "var(--danger)", marginTop: 10 }}>{error}</p>}
+          {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
           {bankTransferResult && token && (
             <BankTransferInstructions result={bankTransferResult} token={token} />
           )}
@@ -98,3 +89,31 @@ export default function CreditPackages({ token, currency = "usd" }: Props) {
     </div>
   );
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+    gap: 12,
+  },
+  card: {
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
+    padding: 16,
+    textAlign: "left",
+    color: "var(--text)",
+  },
+  credits: { fontSize: 18, fontWeight: 700 },
+  price: { fontSize: 24, fontWeight: 800, marginTop: 4, color: "var(--accent)" },
+  label: { fontSize: 12, color: "var(--text-muted)", textTransform: "capitalize", marginTop: 6 },
+  buyButton: {
+    marginTop: 12,
+    padding: "10px 20px",
+    borderRadius: 8,
+    border: "none",
+    background: "var(--accent)",
+    color: "#12151c",
+    fontWeight: 700,
+  },
+};

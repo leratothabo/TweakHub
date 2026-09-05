@@ -14,6 +14,10 @@ venv/
 # Next.js
 .next/
 out/
+# apps/web/tsconfig.json sets "incremental": true, so any tsc run
+# (`next build`'s own check, or a standalone `tsc --noEmit`) regenerates
+# this next to it.
+*.tsbuildinfo
 
 # Build outputs
 build/
@@ -34,6 +38,12 @@ logs/
 uploads/
 tmp/
 storage_outputs/
+# conftest.py sets DATABASE_URL to sqlite:///./_test.db, which resolves
+# relative to whatever directory pytest is invoked from — apps/api itself
+# for both CI (.github/workflows/test.yml) and the documented local
+# workflow, not apps/api/tests — so this has to match both spots (a
+# manual `cd tests && pytest` is unsupported but harmless to also ignore).
+apps/api/_test.db
 apps/api/tests/_test.db
 apps/api/_alembic_tmp*.db
 
@@ -51,5 +61,4 @@ coverage/
 
 # Docker
 *.pid
-.vs/
-.vs/
+*.rdb

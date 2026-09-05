@@ -121,12 +121,41 @@ Visa, Mastercard, Amex with 3D Secure.
 
 ## Deployment on Truehost with GitHub Push
 
-Truehost (Kenya) advantages: pay in KES via M-Pesa, pre-configured environments, NVMe SSD, full root SSH access, local Nairobi support (~4 min first response), automated daily snapshots, network-level DDoS protection.
+**Correction (2026-09-02): this project actually uses truehost.co.za**,
+not truehost.co.ke — a different storefront of the same Truehost brand,
+with materially different facts than the Kenya-market assumptions below
+originally stated (kept struck through for history, replaced by the
+verified figures underneath). Verified directly against truehost.co.za's
+own site: **no physical servers inside South Africa** — VPS instances run
+out of Europe/USA data centers, so there's no in-country latency
+advantage over e.g. Azure's real Johannesburg region; still cheap and
+operationally simple, which is why it's still the pick (see the build
+log's Truehost-vs-Azure discussion), just not for the "local
+infrastructure" reason originally assumed. Payment is Stripe-powered
+(card/Google Pay/etc.) per the site, not confirmed local EFT or mobile
+money — verify directly with Truehost before relying on a specific
+payment method. Support is "24/7 chat/ticket/callback," not the
+Kenya-site's local-Nairobi framing.
+
+~~Truehost (Kenya) advantages: pay in KES via M-Pesa, pre-configured
+environments, NVMe SSD, full root SSH access, local Nairobi support (~4
+min first response), automated daily snapshots, network-level DDoS
+protection.~~
+
+~~| Plan | Price | vCPU | RAM | Storage | Bandwidth | Best For |~~
+~~|------|-------|------|-----|---------|-----------|----------|~~
+~~| KVM1 | Ksh 1,999/mo | 1 | 2 GB | 50 GB NVMe | 4 TB | Development & testing |~~
+~~| KVM2 | Ksh 2,699/mo | 2 | 4 GB | 100 GB NVMe | 8 TB | Production deployment |~~
+
+**Actual truehost.co.za Cloud VPS plans** (verified 2026-09-02, monthly
+billing shown — longer terms discount up to 33%):
 
 | Plan | Price | vCPU | RAM | Storage | Bandwidth | Best For |
 |------|-------|------|-----|---------|-----------|----------|
-| KVM1 | Ksh 1,999/mo | 1 | 2 GB | 50 GB NVMe | 4 TB | Development & testing |
-| KVM2 | Ksh 2,699/mo | 2 | 4 GB | 100 GB NVMe | 8 TB | Production deployment |
+| Cloud VPS Elite | R78.75/mo | 1 | 1 GB | 25 GB SSD | 1 TB | Not enough RAM for this stack |
+| Cloud VPS 1 | R80/mo | 1 | 2 GB | 50 GB SSD | 1 TB | Development & testing |
+| Cloud VPS 2 | R140/mo | 2 | 4 GB | 100 GB SSD | 10 TB | **Production deployment** — closest match to the original KVM2 target |
+| Cloud VPS 3 | R400/mo | 4 | 8 GB | 200 GB SSD | 25 TB | Headroom if Cloud VPS 2's CPU becomes the bottleneck (see build log's traffic-capacity estimate) |
 
 ### Repository layout
 
@@ -180,14 +209,14 @@ pm2 start ecosystem.config.js
 
 ```bash
 apt install -y certbot python3-certbot-nginx
-certbot --nginx -d tweakhub.com -d www.tweakhub.com
+certbot --nginx -d tweakhub.co.za -d www.tweakhub.co.za
 ```
 
 ### Truehost VPS vs GitHub Pages
 
 | Feature | Truehost VPS | GitHub Pages |
 |---------|--------------|---------------|
-| Cost | Ksh 1,999+/mo (M-Pesa) | Free |
+| Cost | R140+/mo (Cloud VPS 2, card via Stripe) | Free |
 | Deployment | Git push + Actions | Git push |
 | Use case | Full web app w/ backend | Static frontend/docs |
 | Payments | Yes (DPO) | No |

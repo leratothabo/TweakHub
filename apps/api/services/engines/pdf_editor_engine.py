@@ -23,6 +23,7 @@ class PDFEditorEngine(Engine):
                 ok=False,
                 error="PDFEditorEngine only supports server-side flatten; "
                 "all other editing happens client-side in apps/web.",
+                refundable=False,
             )
 
         # TODO: implement flatten via PDFBox or pypdf once the annotated

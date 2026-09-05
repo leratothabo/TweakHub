@@ -74,10 +74,15 @@ copy ..\..\.env.example .env
 
 Edit the new `apps\api\.env`:
 - `JWT_SECRET` — any long random string
-- `DATABASE_URL` — leave as the default if you ran the `psql` commands
-  above (`postgresql://tweakhub:tweakhub@localhost:5432/tweakhub`)
-- `REDIS_URL` — leave as default (`redis://localhost:6379/0`) once Redis
-  is running
+- `DATABASE_URL`/`REDIS_URL` — ship commented out in `.env.example` on
+  purpose (see the comment above them — the same file also becomes
+  `.env.production` for the Docker Compose deploy, where a literal value
+  here breaks container-to-container networking). Leave them commented
+  out for local dev too, once you've run the `psql` commands above and
+  Redis is running: `apps/api/config.py`'s `Settings` class already
+  defaults both to `postgresql://tweakhub:tweakhub@localhost:5432/tweakhub`
+  and `redis://localhost:6379/0`, so an absent env var resolves to the
+  same value as an explicit one would.
 - Everything else (DPO keys, SMTP, Google OAuth) can stay blank for local
   dev — those features gracefully no-op without credentials (see each
   setting's comment in `apps/api/config.py`)

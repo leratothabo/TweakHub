@@ -81,14 +81,37 @@ def test_run_processing_job_succeeds_and_stores_output(db_session, local_storage
     assert local_storage.exists(job.input_storage_key) is False
 
 
-def test_run_processing_job_failure_refunds_credits_and_records_error(db_session, local_storage):
+def test_run_processing_job_engine_failure_refunds_credits_and_records_error(db_session, local_storage):
+    """A TweakHub-side failure (here: epub_to_pdf, a documented stub — see
+    document_convert.py — that always fails with EngineResult.refundable
+    defaulting True) still refunds the credits it spent."""
     user = _make_user(db_session, credit_balance=100)
     balance_before = user.credit_balance
 
-    # LibreOffice's docx import is surprisingly tolerant of garbage bytes
-    # (it'll happily render them as plain text), but its PDF import filter
-    # reliably rejects anything that isn't a real PDF — a cleaner way to
-    # force a genuine engine failure for this test.
+    job = _make_async_job(db_session, local_storage, user, "epub_to_pdf", b"not a real epub, doesn't matter")
+    assert user.credit_balance < balance_before  # sanity: spend_credits actually deducted
+
+    run_processing_job(job.id)
+
+    db_session.refresh(job)
+    db_session.refresh(user)
+    assert job.status == JobStatus.FAILED
+    assert job.error is not None
+    assert "not refunded" not in job.error
+    assert user.credit_balance == balance_before  # refunded back to where it started
+    assert local_storage.exists(job.input_storage_key) is False
+
+
+def test_run_processing_job_input_error_does_not_refund_credits(db_session, local_storage):
+    """A failure caused by the uploaded file itself, not by TweakHub, must
+    not be refunded — see EngineResult.refundable and document_convert.py's
+    _pdf_to_word. LibreOffice's docx import is surprisingly tolerant of
+    garbage bytes (it'll happily render them as plain text), but its PDF
+    import filter reliably rejects anything that isn't a real PDF — a
+    clean way to force a genuine (non-refundable) input error here."""
+    user = _make_user(db_session, credit_balance=100)
+    balance_before = user.credit_balance
+
     job = _make_async_job(db_session, local_storage, user, "pdf_to_word", b"not a real pdf file at all")
     assert user.credit_balance < balance_before  # sanity: spend_credits actually deducted
 
@@ -98,7 +121,8 @@ def test_run_processing_job_failure_refunds_credits_and_records_error(db_session
     db_session.refresh(user)
     assert job.status == JobStatus.FAILED
     assert job.error is not None
-    assert user.credit_balance == balance_before  # refunded back to where it started
+    assert "not refunded" in job.error
+    assert user.credit_balance < balance_before  # NOT refunded — this was the user's bad input
     assert local_storage.exists(job.input_storage_key) is False
 
 

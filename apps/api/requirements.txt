@@ -13,6 +13,11 @@ rq==1.16.2
 boto3==1.35.36
 alembic==1.13.3
 bcrypt==4.2.0
+# storage_service.py imports this directly (Fernet, encryption at rest
+# for the local storage backend) -- pinned explicitly rather than left to
+# ride in transitively via python-jose[cryptography]'s extra or moto's
+# own (test-only) dependency, since production code depends on it.
+cryptography==50.0.1
 
 # -- Processing engines (see docs/engines.md) --
 pypdf==5.0.1

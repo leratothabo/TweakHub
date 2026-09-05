@@ -78,6 +78,12 @@ def confirm_bank_transfer(
 
     user = db.get(User, attempt.user_id)
     if user is not None and not attempt.credits_granted:
-        credit_service.grant_purchased_credits(db, user, attempt)
+        try:
+            credit_service.grant_purchased_credits(db, user, attempt)
+        except ValueError:
+            # Lost the race to a concurrent confirm for the same attempt
+            # (a double-click, or two admins confirming at once) — the
+            # other request already granted the credits; benign no-op.
+            pass
 
     return {"status": attempt.status.value, "credits_granted": True}

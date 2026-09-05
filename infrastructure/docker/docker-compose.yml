@@ -67,14 +67,14 @@ services:
       - DPO_COMPANY_TOKEN=${DPO_COMPANY_TOKEN}
       - DPO_SERVICE_TYPE=${DPO_SERVICE_TYPE}
       - JWT_SECRET=${JWT_SECRET}
-      - BASE_URL=${BASE_URL:-https://tweakhub.com}
+      - BASE_URL=${BASE_URL:-https://tweakhub.co.za}
       # nginx.conf serves the API by path (https://<domain>/api/...) on
       # the SAME domain as the frontend, not a separate api. subdomain --
       # there's no DNS record, server block, or TLS cert for one anywhere
       # in this repo. Keep this equal to BASE_URL unless you've actually
       # added a real api. vhost (extra DNS + `certbot -d api.<domain>` +
       # a matching nginx server block) yourself.
-      - API_URL=${API_URL:-${BASE_URL:-https://tweakhub.com}}
+      - API_URL=${API_URL:-${BASE_URL:-https://tweakhub.co.za}}
       - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
       - S3_BUCKET=${S3_BUCKET:-tweakhub-outputs}
       - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-http://minio:9000}
@@ -100,6 +100,16 @@ services:
     build:
       context: ../..
       dockerfile: infrastructure/docker/Dockerfile.api
+    # Dockerfile.api's own HEALTHCHECK (curl localhost:3001/health) is
+    # baked into this same image for the `api` service's benefit and
+    # doesn't apply here -- `worker` runs `rq worker`, never a web server,
+    # so that curl can never succeed and `docker compose ps` would
+    # permanently show this container "unhealthy" even when the actual rq
+    # process is working fine. Nothing depends_on worker's health today,
+    # so this was cosmetic, not a functional break -- but a misleading
+    # status is still worth not shipping. Caught live on an actual deploy.
+    healthcheck:
+      disable: true
     # --url must match whichever Redis services/job_queue.py actually
     # enqueues to (JOB_QUEUE_REDIS_URL if set, else REDIS_URL) -- same
     # fallback order as that module, so this worker is never listening on
@@ -124,6 +134,42 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # Runs scripts/cleanup_expired_outputs.py on a schedule inside the
+  # deployed stack itself, instead of relying on the host VPS's crontab
+  # (which that script's own docstring used to point at — nothing here
+  # ran it automatically). Same image as `api`/`worker`, no separate
+  # build; the command just loops the script hourly, which is more than
+  # frequent enough against FILE_RETENTION_HOURS' 24-48h default
+  # (config.py) without being wasteful. docker-entrypoint.sh execs
+  # whatever command it's given verbatim once any args are present (see
+  # its own comment), so overriding `command` here skips the `api`
+  # service's migration step the same way `worker`'s override already
+  # does.
+  cleanup:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.api
+    # Same reasoning as `worker`'s healthcheck override: Dockerfile.api's
+    # baked-in HEALTHCHECK curls the API's HTTP server, which this
+    # container never runs.
+    healthcheck:
+      disable: true
+    command: ["sh", "-c", "while true; do python -m scripts.cleanup_expired_outputs; sleep 3600; done"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgresql://tweakhub:${POSTGRES_PASSWORD:-tweakhub}@postgres:5432/tweakhub}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - S3_BUCKET=${S3_BUCKET:-tweakhub-outputs}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-http://minio:9000}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-tweakhub}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-tweakhub-minio-secret}
+    volumes:
+      - ./storage_outputs:/app/storage_outputs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   web:
     build:
       context: ../..
@@ -134,7 +180,7 @@ services:
         # API (nginx.conf proxies /api/ by path on one domain, there's no
         # separate api. subdomain set up anywhere) so a same-origin fetch
         # from the browser just works with no CORS involved at all.
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-${BASE_URL:-https://tweakhub.com}}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-${BASE_URL:-https://tweakhub.co.za}}
     ports:
       - "3000:3000"
     environment:

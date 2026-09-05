@@ -1,80 +1,24 @@
-/* ==========================================================================
-   TweakHub design system
-   Dark-mode, editorial-leaning identity: a solid coral accent (no
-   gradients — flat fills throughout, by design) as the signature color,
-   Fraunces for display type, Manrope for interface/body copy, IBM Plex
-   Mono for anything numeric (credits, bank references, tabular data).
-   See layout.tsx for the next/font declarations that feed the --font-*
-   variables below.
-   ========================================================================== */
-
 :root {
-  /* ---- surfaces ---- */
-  --bg: #0a0b10;
-  --bg-soft: #0d0f16;
-  --surface: #12141d;
-  --surface-2: #181b26;
-  --surface-3: #202433;
-  --border: #262b3a;
-  --border-strong: #363d52;
-
-  /* ---- text ---- */
-  --text: #f4f5f9;
-  --text-muted: #9aa2b8;
-  --text-dim: #656d82;
-  /* Text color to use ON TOP of an --accent / --accent-2 / --accent-fill
-     background. --text (#f4f5f9) on any of those is under 3:1 — fails
-     WCAG AA (4.5:1). This dark warm tone clears AA against all of them
-     (~6:1+); use it on every accent-filled button/pill rather than
-     falling back to --text white. */
-  --on-accent: #15121a;
-
-  /* ---- brand accents ---- */
-  --accent: #ff7a3d;       /* coral — primary */
-  --accent-strong: #ff5a1f;
-  --accent-2: #4dd0e1;     /* teal — secondary / links / focus */
+  --bg: #0b0d12;
+  --surface: #12151c;
+  --surface-2: #191d27;
+  --border: #262b38;
+  --text: #f2f4f8;
+  --text-muted: #9aa3b5;
+  /* --text (#f2f4f8) on either accent is ~2.3:1 — fails WCAG AA (4.5:1).
+     Every button in this app that uses --accent/--accent-2 as a
+     background pairs it with --surface (#12151c) as the text color
+     instead (~7.5:1, comfortably past AA) — do the same for any new
+     one rather than falling back to the inherited --text white. */
+  --accent: #ff7a3d;
+  --accent-2: #4dd0e1;
   --success: #4ade80;
   --danger: #f87171;
-  --warning: #fbbf24;
-
-  /* A single named token (rather than every component writing
-     var(--accent) directly) so "what fills a primary surface" stays in
-     one place — flat and solid, no gradients, by design. */
-  --accent-fill: var(--accent);
-
-  /* ---- geometry ---- */
-  --radius-sm: 8px;
-  --radius: 14px;
-  --radius-lg: 24px;
-  --radius-pill: 999px;
-
-  /* ---- shadows (tinted, not pure black — reads as depth, not a smudge) ---- */
-  --shadow-sm: 0 1px 2px rgba(4, 5, 10, 0.4);
-  --shadow-md: 0 8px 24px -8px rgba(4, 6, 14, 0.55);
-  --shadow-lg: 0 24px 60px -20px rgba(4, 6, 14, 0.65);
-  --shadow-accent: 0 12px 32px -12px rgba(255, 122, 61, 0.35);
-
-  /* ---- type ---- */
-  --font-display: var(--font-fraunces), "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-  --font-body: var(--font-manrope), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: var(--font-plex-mono), "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
+  --radius: 12px;
 }
 
 * {
   box-sizing: border-box;
-}
-
-html {
-  scroll-behavior: smooth;
 }
 
 html,
@@ -83,32 +27,11 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-body);
-  font-size: 16px;
-  line-height: 1.55;
-  -webkit-font-smoothing: antialiased;
-}
-
-::selection {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
-h1, h2, h3, h4 {
-  font-family: var(--font-display);
-  font-weight: 600;
-  line-height: 1.08;
-  margin: 0;
-  text-wrap: balance;
-}
-
-p {
-  text-wrap: pretty;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 a {
   color: inherit;
-  text-decoration: none;
 }
 
 button {
@@ -116,498 +39,122 @@ button {
   cursor: pointer;
 }
 
-input, textarea, select {
-  font-family: inherit;
-}
-
-::placeholder {
-  color: var(--text-dim);
-}
-
-:focus-visible {
-  outline: 2px solid var(--accent-2);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
 .container {
-  max-width: 1160px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 0 24px;
 }
 
-.container-wide {
-  max-width: 1360px;
+/* Long-form legal/policy pages (terms, privacy, refund policy, acceptable
+   use) — the rest of the app styles per-element inline, but doing that
+   for a multi-thousand-word document is unreadable to maintain, so these
+   get one shared block instead. Scoped to .legal-doc so nothing else
+   inherits it. */
+.legal-doc {
+  max-width: 760px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 64px 24px 96px;
+  line-height: 1.65;
 }
 
-.section {
-  padding: 88px 0;
+.legal-doc h1 {
+  font-size: 30px;
+  margin: 0 0 8px;
 }
 
-.section-tight {
-  padding: 56px 0;
-}
-
-@media (max-width: 760px) {
-  .section { padding: 56px 0; }
-  .section-tight { padding: 36px 0; }
-}
-
-.eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--accent-2);
-}
-
-.accent-text {
-  color: var(--accent);
-}
-
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
-
-/* ---- buttons ---- */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 13px 24px;
-  border-radius: var(--radius-pill);
-  border: 1px solid transparent;
-  font-weight: 700;
-  font-size: 14.5px;
-  line-height: 1;
-  white-space: nowrap;
-  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, border-color 0.16s ease, opacity 0.16s ease;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-primary {
-  background: var(--accent-fill);
-  color: var(--on-accent);
-  box-shadow: var(--shadow-accent);
-}
-
-.btn-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  background: var(--accent-strong);
-  box-shadow: 0 16px 40px -12px rgba(255, 90, 31, 0.45);
-}
-
-.btn-secondary {
-  background: var(--surface-2);
-  color: var(--text);
-  border-color: var(--border-strong);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  border-color: var(--accent-2);
-  color: var(--accent-2);
-}
-
-.btn-ghost {
-  background: transparent;
+.legal-doc .legal-updated {
   color: var(--text-muted);
-  border-color: var(--border);
-  font-weight: 600;
+  font-size: 14px;
+  margin: 0 0 40px;
 }
 
-.btn-ghost:hover:not(:disabled) {
-  color: var(--text);
-  border-color: var(--border-strong);
-}
-
-.btn-sm {
-  padding: 8px 16px;
-  font-size: 13px;
-}
-
-/* ---- cards / surfaces ---- */
-.card {
+.legal-doc .legal-notice {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
-}
-
-.card-hover:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  font-size: 13.5px;
-  font-weight: 600;
-}
-
-.glass-header {
-  /* Solid, not blurred: position:sticky + backdrop-filter is a known
-     compositing trouble spot on some Chromium/GPU combinations (visible
-     as a torn/ghosted repaint on scroll) — a near-opaque flat background
-     gets the same "content is layered above the page" read with none of
-     that risk. */
-  background: rgba(8, 9, 13, 0.98);
-  border-bottom: 1px solid var(--border);
-}
-
-/* ---- motion ---- */
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(18px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes floatSlow {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-16px) rotate(2deg); }
-}
-
-@keyframes pulseGlow {
-  0%, 100% { opacity: 0.5; transform: scale(1); }
-  50% { opacity: 0.9; transform: scale(1.06); }
-}
-
-@keyframes spinSlow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.fade-up {
-  animation: fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.float-slow {
-  animation: floatSlow 7s ease-in-out infinite;
-}
-
-/* ---- scrollbar (webkit) ---- */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-track {
-  background: var(--bg);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--surface-3);
-  border-radius: 999px;
-  border: 2px solid var(--bg);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--border-strong);
-}
-
-/* ==========================================================================
-   Marketing shell layout (app/page.tsx)
-   ========================================================================== */
-
-.hero-grid {
-  display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
-  gap: 64px;
-  align-items: center;
-}
-
-.hero-visual {
-  position: relative;
-  display: flex;
-  justify-content: center;
-}
-
-.hero-card {
-  position: relative;
-  width: 100%;
-  max-width: 380px;
-  padding: 30px 28px;
-  background: var(--surface);
-  box-shadow: var(--shadow-lg);
-}
-
-.hero-trust-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-}
-
-.format-chip {
-  padding: 6px 12px;
-  border-radius: var(--radius-pill);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.convert-badge {
-  width: 68px;
-  height: 68px;
-  border-radius: 20px;
-  background: var(--accent-fill);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--shadow-accent);
-}
-
-.float-badge {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-3);
-  border: 1px solid var(--border-strong);
-  font-size: 12px;
-  font-weight: 700;
-  box-shadow: var(--shadow-md);
-  white-space: nowrap;
-}
-
-.float-badge-a {
-  top: -16px;
-  right: -18px;
-}
-
-.float-badge-b {
-  bottom: 34px;
-  left: -30px;
-}
-
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 24px;
-  text-align: center;
-}
-
-.steps-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-
-.trust-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 32px;
-}
-
-@media (max-width: 980px) {
-  .hero-grid { grid-template-columns: 1fr; gap: 48px; }
-  .hero-visual { order: -1; }
-  .header-nav { display: none; }
-  .trust-grid { grid-template-columns: repeat(2, 1fr); }
-  .steps-grid { grid-template-columns: 1fr; }
-}
-
-@media (max-width: 640px) {
-  .stats-row { grid-template-columns: repeat(2, 1fr); row-gap: 28px; }
-  .trust-grid { grid-template-columns: 1fr; }
-  .float-badge { display: none; }
-}
-
-/* ==========================================================================
-   ToolRouter
-   ========================================================================== */
-
-.category-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 22px;
-}
-
-.category-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  font-weight: 700;
-  font-size: 13.5px;
-  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
-}
-
-.category-tab:hover {
-  transform: translateY(-1px);
-}
-
-.tool-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 12px;
-}
-
-.tool-card {
-  padding: 16px;
-  text-align: left;
-  color: var(--text);
-}
-
-.dropzone {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 18px;
-  border: 1.5px dashed var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.dropzone:hover {
-  border-color: var(--accent-2);
-  background: var(--surface-3);
-}
-
-.result-banner {
-  margin-top: 16px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
-  border-radius: var(--radius-sm);
-  background: rgba(74, 222, 128, 0.1);
-  border: 1px solid rgba(74, 222, 128, 0.3);
-  color: var(--success);
-  font-weight: 600;
-  font-size: 13.5px;
-}
-
-/* ==========================================================================
-   AuthPanel
-   ========================================================================== */
-
-.auth-panel {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.auth-input {
-  padding: 9px 14px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text);
-  width: 150px;
-  font-size: 13.5px;
-  transition: border-color 0.15s ease;
-}
-
-.auth-input:focus {
-  border-color: var(--accent-2);
-  outline: none;
-}
-
-.auth-toggle {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 12px;
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.auth-error {
-  width: 100%;
-  color: var(--danger);
-  font-size: 12.5px;
-  margin: 2px 0 0;
-}
-
-.auth-notice {
-  width: 100%;
-  color: var(--success);
-  font-size: 12.5px;
-  margin: 2px 0 0;
-}
-
-@media (max-width: 640px) {
-  .auth-panel { justify-content: flex-end; }
-  .auth-input { width: 120px; }
-}
-
-/* ==========================================================================
-   CreditPackages
-   ========================================================================== */
-
-.pricing-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 16px;
-}
-
-.pricing-card {
-  position: relative;
-  padding: 22px;
-  text-align: left;
-  color: var(--text);
-  overflow: visible;
-}
-
-.pricing-card-popular {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
-}
-
-.pricing-badge {
-  position: absolute;
-  top: -12px;
-  left: 20px;
-  padding: 4px 12px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-fill);
-  color: var(--on-accent);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.pricing-label {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  margin-bottom: 10px;
-}
-
-.pricing-price {
-  font-family: var(--font-display);
-  font-size: 30px;
-  font-weight: 600;
-}
-
-.pricing-credits {
-  font-size: 13px;
+  padding: 16px 20px;
+  font-size: 14px;
   color: var(--text-muted);
-  margin-top: 6px;
+  margin: 0 0 40px;
+}
+
+.legal-doc .legal-notice strong {
+  color: var(--text);
+}
+
+.legal-doc h2 {
+  font-size: 20px;
+  margin: 40px 0 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.legal-doc h2:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.legal-doc h3 {
+  font-size: 16px;
+  margin: 24px 0 8px;
+  color: var(--text);
+}
+
+.legal-doc p,
+.legal-doc li {
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+.legal-doc ul,
+.legal-doc ol {
+  padding-left: 22px;
+  margin: 8px 0 16px;
+}
+
+.legal-doc li {
+  margin-bottom: 6px;
+}
+
+.legal-doc a {
+  color: var(--accent-2);
+  text-decoration: underline;
+}
+
+.legal-doc [data-placeholder] {
+  background: rgba(255, 122, 61, 0.14);
+  border: 1px dashed var(--accent);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--text);
+  font-style: normal;
+}
+
+.legal-footer {
+  border-top: 1px solid var(--border);
+  padding: 32px 24px;
+  margin-top: 64px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.legal-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.legal-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.legal-footer a:hover {
+  color: var(--text);
+  text-decoration: underline;
 }

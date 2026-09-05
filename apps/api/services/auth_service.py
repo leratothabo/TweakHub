@@ -25,6 +25,10 @@ EMAIL_VERIFICATION_TTL = timedelta(hours=24)
 PASSWORD_RESET_TTL = timedelta(hours=2)
 SIGNUP_BONUS_CREDITS = 25
 
+# A fixed bcrypt hash checked (and always loses) whenever login() has no
+# real password_hash to compare against — see login()'s docstring for why.
+_DUMMY_PASSWORD_HASH = bcrypt.hashpw(b"tweakhub-timing-normalization", bcrypt.gensalt()).decode("utf-8")
+
 # Uppercase letters + digits rather than secrets.token_urlsafe's base64
 # alphabet — a referral code is meant to be read aloud, typed, or dropped
 # into a chat message, so it skips '-'/'_' and stays case-insensitive-safe
@@ -111,8 +115,23 @@ class AuthService:
         return user
 
     def login(self, db: Session, email: str, password: str) -> User:
+        # bcrypt's check is deliberately slow (~100ms+), and the original
+        # `user is None or not user.password_hash or not
+        # verify_password(...)` short-circuited straight past that check
+        # for an unregistered email or a Google-OAuth-only account
+        # (password_hash is None — set at oauth_service.py's signup
+        # path), while a real local-password account always paid the
+        # bcrypt cost. Same generic error message either way, but
+        # different response latency — an attacker can time a guessed
+        # email against a wrong password and tell "no local-password
+        # account" (fast) apart from "account exists" (slow), enumerating
+        # registered emails before a credential-stuffing pass. Always
+        # running one bcrypt check — against a fixed dummy hash when
+        # there's no real one — keeps the two paths' timing comparable.
         user = db.query(User).filter(User.email == email).first()
-        if user is None or not user.password_hash or not self.verify_password(password, user.password_hash):
+        password_hash = user.password_hash if user is not None else None
+        password_ok = self.verify_password(password, password_hash or _DUMMY_PASSWORD_HASH)
+        if user is None or not password_hash or not password_ok:
             raise AuthError("Invalid email or password")
 
         # Email verification is enforced everywhere except local dev, so
@@ -130,10 +149,35 @@ class AuthService:
         if _is_expired(user.email_verification_expires_at):
             raise AuthError("Verification link has expired — request a new one")
 
-        user.is_email_verified = True
-        user.email_verification_token = None
-        user.email_verification_expires_at = None
-        db.add(user)
+        # Atomic conditional UPDATE, not load-then-set-then-commit.
+        # _grant_referral_bonus_if_applicable() has no separate "already
+        # granted" flag — its whole safety against a double grant rests
+        # on this token only ever being consumable once, on the
+        # assumption that a plain SELECT-then-mutate-then-commit can't
+        # race. It can: two concurrent POST /api/auth/verify-email calls
+        # carrying the same still-valid token can both pass the SELECT
+        # above before either commits (ordinary read-committed
+        # semantics), and both would then call the grant. The UPDATE's
+        # WHERE clause re-checks email_verification_token at write time
+        # (which takes a row lock), so only one of two racing requests
+        # gets rowcount == 1 and proceeds to grant the bonus; the other
+        # gets 0 and is told the link was already used — the same
+        # response a legitimate double-submit would get.
+        updated = (
+            db.query(User)
+            .filter(User.id == user.id, User.email_verification_token == token)
+            .update(
+                {
+                    "is_email_verified": True,
+                    "email_verification_token": None,
+                    "email_verification_expires_at": None,
+                },
+                synchronize_session=False,
+            )
+        )
+        if updated == 0:
+            db.rollback()
+            raise AuthError("Invalid or expired verification link")
         db.commit()
         db.refresh(user)
 

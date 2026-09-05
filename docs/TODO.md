@@ -130,8 +130,12 @@ this is a launchable product:
   as `api`, different command) scalable independently.
   Retention (the 24-48h policy, `FILE_RETENTION_HOURS`) is enforced by
   `apps/api/scripts/cleanup_expired_outputs.py` — neither storage backend
-  does this on its own; see that file for why and how it's meant to be
-  cron-scheduled. Frontend (`lib/api.ts`, `ToolRouter.tsx`) updated to
+  does this on its own; see that file for why. It now actually runs on a
+  schedule: `infrastructure/docker/docker-compose.yml` has a dedicated
+  `cleanup` service (same image as `api`/`worker`) that loops the script
+  hourly inside the deployed stack itself — no host VPS crontab entry
+  needed (that was this section's one open gap; see "Scheduled cleanup"
+  below for the fix). Frontend (`lib/api.ts`, `ToolRouter.tsx`) updated to
   match: `processTool()` now returns a `JobResult` (not a `Blob`), and
   `pollJob()` handles the async case.
   Verified: 31 new tests (`test_storage_service.py` — including a real S3
@@ -553,6 +557,25 @@ this is a launchable product:
   and, same pre-existing gap as the org-billing note above, a bank
   transfer (like every other method) can only ever top up a User's own
   balance, not an organization's shared pool.
+
+- **Scheduled cleanup — the cron entry `cleanup_expired_outputs.py`'s own
+  docstring told you to add by hand was never actually added anywhere in
+  this repo, so expired outputs were never deleted on a real deploy.**
+  Fixed by giving the deployed stack its own scheduler instead of relying
+  on the host VPS: `infrastructure/docker/docker-compose.yml` now has a
+  `cleanup` service — same image as `api`/`worker` (no separate build),
+  `docker-entrypoint.sh`'s existing "exec whatever command you're given"
+  path (same mechanism `worker`'s override already uses) running a shell
+  loop that calls `python -m scripts.cleanup_expired_outputs` then sleeps
+  an hour, repeatedly — comfortably inside `FILE_RETENTION_HOURS`' 24-48h
+  default (`config.py`). Only needs `DATABASE_URL` and the storage
+  (`STORAGE_BACKEND`/`S3_*`) env vars, mirrored from `worker`'s env block;
+  no Redis/job-queue vars, since this script never touches either. The
+  script's own docstring updated to match (no more "add this to the VPS's
+  crontab" instruction — it's wrong now). Verified with
+  `docker compose config` (the new service's interpolation, `depends_on`,
+  and command all resolve correctly) — same no-real-Docker-daemon caveat
+  as the rest of the "Deployment hardening" entry above.
 
 ## Should-have
 

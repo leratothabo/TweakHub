@@ -211,8 +211,14 @@ alembic upgrade head   # apply it locally to confirm it runs cleanly
 
 ## Deploying to Truehost
 
-1. Provision a Truehost KVM1 (dev) or KVM2 (production) VPS, paid via
-   M-Pesa, and point `tweakhub.com` / `www.tweakhub.com` at its IP.
+1. Provision a Truehost (truehost.co.za) Cloud VPS 2 (2 vCPU / 4 GB /
+   100 GB SSD / 10 TB bandwidth, ~R140/mo — the closest match to this
+   project's original KVM2 target spec; see docs/tweakhub-master-plan.md
+   for why), and point `tweakhub.co.za` / `www.tweakhub.co.za` at its IP.
+   Note: truehost.co.za's own hosting page states it has no physical
+   servers inside South Africa — VPS instances run out of its
+   Europe/USA data centers, so budget for that latency rather than the
+   in-country latency the original Truehost-Kenya plan assumed.
 2. SSH in and run `scripts/setup-truehost.sh` once (installs Docker,
    clones the repo, prints the remaining manual steps: `.env.production`,
    first `docker compose up`, and `certbot` for SSL).

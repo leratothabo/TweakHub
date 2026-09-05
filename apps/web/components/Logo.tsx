@@ -1,64 +1,52 @@
-import { IconConvert } from "@/components/icons/Icons";
-
 /**
- * TweakHub's mark: a solid-coral badge (the "convert" glyph — two arcs
- * cycling into each other, standing in for "any format, into any other
- * format") plus the wordmark, set in the display face. This is a fully
- * coded lockup rather than an image, so it stays crisp at every size and
- * needs no asset pipeline — genuinely the brand mark, not a filler box.
+ * TweakHub's real logo mark, paired with the wordmark as live text.
  *
- * If a separately designed logo file ever replaces it: drop the asset at
- * apps/web/public/logo.svg and swap the JSX below for
- *   <img src="/logo.svg" alt="TweakHub" height={size} style={{ display: "block" }} />
+ * apps/web/public/logo-icon.png is the "TH" icon cropped out of the
+ * source lockup (which stacks the icon over a "tweakhub" wordmark
+ * vertically) -- at the ~32-40px height this component actually renders
+ * at across the app, a shrunk raster of that wordmark text would be
+ * illegible, so the name is set as real text here instead: crisp at any
+ * size, and it matches the source wordmark's all-lowercase styling. The
+ * icon alone is also what's installed as the favicon/PWA icons (see
+ * apps/web/public/icon-*.png, favicon.ico, manifest.json) -- built for
+ * exactly this "reads fine tiny" job.
  */
 interface Props {
-  /** Controls the badge size in px; the wordmark scales with it. */
+  /** Height in px — the wordmark text scales to match. */
   size?: number;
-  /** Set false on very small/cramped placements to show just the badge. */
-  withWordmark?: boolean;
 }
 
-export default function Logo({ size = 34, withWordmark = true }: Props) {
+export default function Logo({ size = 32 }: Props) {
   return (
-    <span
+    <div
+      role="img"
+      aria-label="TweakHub"
       style={{
-        display: "inline-flex",
+        display: "flex",
         alignItems: "center",
-        gap: size * 0.32,
+        gap: size * 0.26,
         flexShrink: 0,
       }}
     >
+      <img
+        src="/logo-icon.png"
+        alt=""
+        width={size}
+        height={size}
+        style={{ display: "block", width: size, height: size }}
+      />
       <span
         aria-hidden="true"
         style={{
-          width: size,
-          height: size,
-          borderRadius: size * 0.28,
-          background: "var(--accent-fill)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--on-accent)",
-          boxShadow: "var(--shadow-accent)",
-          flexShrink: 0,
+          fontSize: size * 0.6,
+          fontWeight: 600,
+          letterSpacing: "-0.01em",
+          color: "var(--text)",
+          lineHeight: 1,
         }}
       >
-        <IconConvert size={size * 0.56} strokeWidth={1.9} />
+        tweakhub
       </span>
-      {withWordmark && (
-        <span
-          style={{
-            fontFamily: "var(--font-display)",
-            fontWeight: 600,
-            fontSize: size * 0.62,
-            letterSpacing: "-0.01em",
-            color: "var(--text)",
-            lineHeight: 1,
-          }}
-        >
-          TweakHub
-        </span>
-      )}
-    </span>
+    </div>
   );
 }

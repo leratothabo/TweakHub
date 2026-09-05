@@ -23,6 +23,20 @@ class Settings(BaseSettings):
     dpo_service_type: str = ""
     dpo_api_base_url: str = "https://secure.dpogroup.com"
 
+    # -- Payments: Paystack (https://paystack.com/docs/api) --
+    # Backend-only plumbing so far (services/payment_service.py's
+    # initialize_paystack_transaction/verify_paystack_transaction, routes/
+    # payments.py's /api/payments/paystack/* routes) — not yet wired into
+    # credit_service.initiate_purchase() or the PaymentMethod enum
+    # alongside DPO; that's a separate decision. paystack_secret_key is
+    # the sk_... key and must only ever be read server-side, same as
+    # dpo_company_token above — never send it to the Next.js frontend.
+    # The pk_... publishable key (safe to expose client-side, e.g. for
+    # @paystack/inline-js) isn't a backend setting at all — it belongs in
+    # apps/web's NEXT_PUBLIC_* env vars if/when a checkout UI is built.
+    paystack_secret_key: str = ""
+    paystack_base_url: str = "https://api.paystack.co"
+
     max_upload_mb_free: int = 10
     max_upload_mb_pro: int = 100
     max_upload_mb_business: int = 500
@@ -133,29 +147,6 @@ class Settings(BaseSettings):
     google_auth_url: str = "https://accounts.google.com/o/oauth2/v2/auth"
     google_token_url: str = "https://oauth2.googleapis.com/token"
     google_userinfo_url: str = "https://www.googleapis.com/oauth2/v3/userinfo"
-
-    # -- Ozow (services/ozow_service.py) --
-    # South African instant EFT — the customer pays through their own
-    # online banking, redirected via Ozow's hosted flow. Gracefully
-    # disabled (a clear PaymentServiceError, not a 500) when site_code
-    # isn't set — same convention as dpo_company_token/google_client_id.
-    # Get these three from the Ozow merchant dashboard, not from this
-    # codebase: SiteCode + PrivateKey (used to build/verify HashCheck,
-    # see ozow_service.py's docstring for the exact algorithm and the two
-    # independent sources it was verified against) + ApiKey.
-    ozow_site_code: str = ""
-    ozow_private_key: str = ""
-    ozow_api_key: str = ""
-    ozow_api_base_url: str = "https://api.ozow.com"
-    # Ozow's own hosted-page host — separate from ozow_api_base_url
-    # because postpaymentrequest (an API call) and the page the customer
-    # is redirected to are different hosts in Ozow's own docs.
-    ozow_country_code: str = "ZA"
-    ozow_currency_code: str = "ZAR"
-    # True (sandbox) by default so a deployment that forgets to flip this
-    # can't accidentally take real money — same "safe by default" instinct
-    # as dpo_webhook_ip_allowlist shipping empty rather than guessed.
-    ozow_is_test: bool = True
 
 
 @lru_cache

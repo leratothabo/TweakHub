@@ -23,24 +23,16 @@ class PaymentMethod(str, enum.Enum):
     MPESA = "mpesa"
     WAVE = "wave"
     BANK_TRANSFER = "bank_transfer"
-    # South African instant EFT via Ozow (services/ozow_service.py) — the
-    # customer completes payment through their own online banking, and
-    # Ozow calls our notify webhook, unlike BANK_TRANSFER (a plain manual
-    # EFT into TweakHub's account with no gateway involved at all).
-    OZOW = "ozow"
 
 
 class PaymentAttempt(Base):
     """
-    One row per payment attempt. For CARD/MTN_MOMO/AIRTEL_MONEY/
-    ORANGE_MONEY/MPESA/WAVE this is a DPO payment session — created on
-    initiation, updated by the DPO webhook callback (or a verify-on-return
-    poll) once the payment settles. OZOW is its own gateway, verified by
-    its own notify webhook (routes/payments.py's ozow_notify, hash-checked
-    against OZOW_PRIVATE_KEY — see services/ozow_service.py). BANK_TRANSFER
-    rows never touch a gateway at all: they're created PENDING with a
-    bank_reference and confirmed by an admin (routes/admin.py) once the
-    deposit is seen on TweakHub's bank statement. Either way,
+    One row per payment attempt. For every method except BANK_TRANSFER
+    this is a DPO payment session — created on initiation, updated by the
+    DPO webhook callback (or a verify-on-return poll) once the payment
+    settles. BANK_TRANSFER rows never touch DPO: they're created PENDING
+    with a bank_reference and confirmed by an admin (routes/admin.py)
+    once the deposit is seen on TweakHub's bank statement. Either way,
     `credits_granted` is only set after a SUCCEEDED verification/
     confirmation, never optimistically, so a crashed callback (or a
     double-click on "confirm") can't grant free credits.
@@ -56,11 +48,6 @@ class PaymentAttempt(Base):
     method: Mapped[PaymentMethod] = mapped_column(Enum(PaymentMethod), nullable=False)
     status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus), default=PaymentStatus.PENDING)
     dpo_transaction_token: Mapped[str] = mapped_column(String(255), nullable=True, index=True)
-    # Only set for method=OZOW — Ozow's own paymentRequestId for this
-    # attempt, kept for audit/debugging. The notify webhook looks the row
-    # up by TransactionReference (which we set to attempt.id, same idea
-    # as CompanyRef in the DPO flow), not by this column.
-    ozow_transaction_id: Mapped[str] = mapped_column(String(255), nullable=True, index=True)
     # Only set for method=BANK_TRANSFER — a direct EFT never touches DPO,
     # so it has no dpo_transaction_token. "TweakHub" + a zero-padded
     # number pulled from the bank_transfer_ref_seq Postgres sequence (see
