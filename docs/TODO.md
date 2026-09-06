@@ -577,6 +577,67 @@ this is a launchable product:
   and command all resolve correctly) — same no-real-Docker-daemon caveat
   as the rest of the "Deployment hardening" entry above.
 
+- **Recurring subscriptions (Paystack Plan + Subscription API).** Two
+  monthly tiers (`services/subscription_service.py`'s `SUBSCRIPTION_PLANS`
+  — `pro`/`business`, each granting a `PlanTier` upgrade plus a monthly
+  credit allowance, e.g. 1,000/5,000 credits) billed through Paystack's
+  own recurring-billing machinery rather than a hand-rolled renewal cron —
+  Paystack handles the actual charge retries/dunning; this codebase just
+  reacts to its webhooks. DPO remains untouched and still processes every
+  one-time `CREDIT_PACKAGES` purchase — these are two deliberately
+  separate flows, and the `SUBSCRIPTION_PLANS` "pro"/"business" keys
+  overlap with (but mean something different from) `CREDIT_PACKAGES`'
+  same-named keys; see that dict's docstring.
+  New: `models/subscription.py` (`Subscription`, one row per user, unique
+  `user_id`), migration `a4bb2d2f6407`; `services/subscription_service.py`
+  (`initiate_subscription`, `cancel_subscription`,
+  `handle_paystack_event` dispatching on `subscription.create`/
+  `charge.success`/`invoice.payment_failed`/`subscription.disable`+
+  `subscription.not_renew`); `services/credit_service.py`'s
+  `grant_subscription_credits` (period-keyed idempotency guard, same
+  atomic-UPDATE discipline as `grant_purchased_credits`); `services/
+  payment_service.py`'s `disable_paystack_subscription` and
+  `verify_paystack_webhook_signature` (HMAC-SHA512, `hmac.compare_digest`)
+  plus a `plan` param on `initialize_paystack_transaction`; `routes/
+  subscriptions.py` (`GET /plans`, `GET /me`, `POST /subscribe`,
+  `POST /cancel`); `routes/payments.py`'s `POST /api/payments/paystack/
+  webhook` (signature-verified before any parsing, rejects with 400 on
+  failure); `scripts/setup_paystack_plans.py` (one-time, idempotent —
+  checks `GET /plan` before creating); frontend `SubscriptionPlans.tsx` +
+  `SubscriptionStatus.tsx`, a tab in `CreditPackages.tsx`, and the
+  matching `lib/api.ts` calls.
+  Verified: 15 new tests in `test_subscription_service.py` (SQLite +
+  monkeypatched `payment_service`, no real network) covering
+  subscribe→PENDING, `subscription.create` activating + upgrading +
+  granting credits exactly once under a replayed webhook, `charge.success`
+  renewal granting again and advancing the period but not double-granting
+  the very first charge or a replayed renewal, `invoice.payment_failed` →
+  `PAST_DUE`, `subscription.disable` → `CANCELLED`, and the webhook
+  route's signature gate (400 on missing/wrong signature, 200 on a
+  correctly-computed one); full suite 363/363 passing. Migration verified
+  upgrade → downgrade → upgrade against a throwaway SQLite db;
+  `alembic revision --autogenerate` produced it cleanly with no manual
+  fixups needed. `next build` clean.
+  **Pricing ($19.99/1,000 credits, $59.99/5,000 credits) is a placeholder**
+  for the business owner to review, same spirit as the legal docs'
+  `[amount]` placeholders.
+  **Known limitations, stated rather than glossed over**: one subscription
+  per user, enforced with a plain unique index (not the partial-index
+  style `2a4f2a066ede` uses for one-org-per-user) — no plan-switching/
+  upgrade-downgrade/proration in this first pass, and no resubscribing
+  once a row is `CANCELLED` (the unique index blocks a second row
+  outright); `initiate_subscription`/`cancel_subscription` surface both as
+  a clear error rather than a silent no-op or a raw `IntegrityError`. A v2
+  wanting live plan-switching would need a partial unique index (same
+  technique as `uq_org_members_one_org_per_user`) plus real proration
+  logic against Paystack's `/subscription` API.
+  **Manual one-time setup required before this works against a real
+  Paystack account**: run `python -m scripts.setup_paystack_plans` (needs
+  `PAYSTACK_SECRET_KEY` set) to create the two Plans and print their
+  codes; set `PAYSTACK_PLAN_CODE_PRO`/`PAYSTACK_PLAN_CODE_BUSINESS` from
+  that output; configure `https://<domain>/api/payments/paystack/webhook`
+  as the webhook URL in the Paystack dashboard.
+
 ## Should-have
 
 - WhatsApp bot, SEO content pipeline — growth-strategy items from the

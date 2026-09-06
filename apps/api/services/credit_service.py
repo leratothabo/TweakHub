@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from models import CreditTransaction, CreditTransactionType, Organization, PaymentAttempt, PaymentMethod, User
+from models import CreditTransaction, CreditTransactionType, Organization, PaymentAttempt, PaymentMethod, Subscription, User
 from . import organization_service
 from .payment_service import BANK_TRANSFER_DETAILS, payment_service
 from .tools_catalog import get_tool
@@ -259,6 +259,73 @@ class CreditService:
         db.add(tx)
         db.add(user)
         db.add(attempt)
+        db.commit()
+        db.refresh(tx)
+        return tx
+
+    def grant_subscription_credits(self, db: Session, user: User, subscription, note: str) -> CreditTransaction | None:
+        """Called by services/subscription_service.py's webhook handler
+        when a Subscription's billing period is confirmed to have started
+        or renewed -- on `subscription.create` for the very first period,
+        and on `charge.success` for every later renewal. Grants that
+        subscription's plan's monthly_credits (services/
+        subscription_service.py's SUBSCRIPTION_PLANS -- a separate,
+        unrelated dict from this module's own CREDIT_PACKAGES; see that
+        dict's docstring for why the "pro"/"business" key names overlap
+        on purpose).
+
+        Guarded the same way grant_purchased_credits() is above (an
+        atomic conditional UPDATE, not a Python check-then-act), but keyed
+        by *billing period* instead of by a one-shot PaymentAttempt id:
+        subscription.credits_granted_through only advances to
+        subscription.current_period_end if it doesn't already match it.
+        Paystack redelivers webhooks on retry, and subscription_service.py
+        calls this from two different event handlers whose periods can
+        overlap (the very first charge.success covers the same period
+        subscription.create already granted) -- this guard is what makes
+        both "the same event delivered twice" and "two different events
+        covering the same period" both safe. Unlike
+        grant_purchased_credits(), a no-op here returns None instead of
+        raising: it's the expected, routine outcome of Paystack's own
+        retry behavior, not a race a caller needs to specially catch.
+        """
+        # Local import: subscription_service imports credit_service (to call
+        # this method), so importing SUBSCRIPTION_PLANS at module level here
+        # would be a circular import at load time. Deferring it to call time
+        # breaks the cycle without needing to relocate either dict.
+        from .subscription_service import SUBSCRIPTION_PLANS
+
+        plan = SUBSCRIPTION_PLANS.get(subscription.plan_key)
+        if plan is None:
+            raise ValueError(f"Unknown subscription plan_key: {subscription.plan_key}")
+        period_end = subscription.current_period_end
+        if period_end is None:
+            raise ValueError("Cannot grant subscription credits before current_period_end is set")
+
+        updated = (
+            db.query(Subscription)
+            .filter(
+                Subscription.id == subscription.id,
+                (Subscription.credits_granted_through.is_(None))
+                | (Subscription.credits_granted_through != period_end),
+            )
+            .update({"credits_granted_through": period_end}, synchronize_session=False)
+        )
+        if updated == 0:
+            db.rollback()
+            return None
+
+        amount = plan["monthly_credits"]
+        user.credit_balance += amount
+        tx = CreditTransaction(
+            user_id=user.id,
+            type=CreditTransactionType.PURCHASE,
+            amount=amount,
+            balance_after=user.credit_balance,
+            note=note,
+        )
+        db.add(tx)
+        db.add(user)
         db.commit()
         db.refresh(tx)
         return tx

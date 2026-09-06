@@ -30,8 +30,8 @@ export default function PrivacyPage() {
         assumes South Africa as TweakHub&rsquo;s primary jurisdiction (POPIA)
         with GDPR provisions for EU users, since that&rsquo;s what
         docs/tweakhub-master-plan.md&rsquo;s compliance checklist names — confirm
-        that&rsquo;s correct, fill in the bracketed placeholders (registered
-        entity, Information Officer contact, physical address), and have this
+        that&rsquo;s correct, fill in the bracketed placeholder (registered
+        entity), and have this
         reviewed by an attorney before relying on it. If TweakHub has users in
         Nigeria, Kenya, or other countries with their own data protection
         laws (plausible given the mobile money coverage below), those laws
@@ -54,8 +54,7 @@ export default function PrivacyPage() {
       <p>
         Our Information Officer (POPIA) / EU representative (GDPR) can be
         reached at{" "}
-        <a href="mailto:privacy@tweakhub.co.za">privacy@tweakhub.co.za</a>,{" "}
-        <span data-placeholder>[registered address]</span>.
+        <a href="mailto:info@tweakhub.co.za">info@tweakhub.co.za</a>.
       </p>
 
       <h2>2. What we collect</h2>
@@ -206,7 +205,7 @@ export default function PrivacyPage() {
         Whatever your jurisdiction, you can ask us to access, correct, or
         delete your personal information, or close your account entirely, by
         emailing{" "}
-        <a href="mailto:privacy@tweakhub.co.za">privacy@tweakhub.co.za</a>. If
+        <a href="mailto:info@tweakhub.co.za">info@tweakhub.co.za</a>. If
         your country has its own data protection law that gives you
         additional rights beyond what&rsquo;s listed here, those rights apply
         too and we&rsquo;ll honor a valid request made under them.
@@ -246,8 +245,7 @@ export default function PrivacyPage() {
       <h2>11. Contact</h2>
       <p>
         Questions, or to exercise any right above:{" "}
-        <a href="mailto:privacy@tweakhub.co.za">privacy@tweakhub.co.za</a>{" "}
-        <span data-placeholder>[confirm this inbox exists and is monitored]</span>.
+        <a href="mailto:info@tweakhub.co.za">info@tweakhub.co.za</a>.
       </p>
     </main>
   );

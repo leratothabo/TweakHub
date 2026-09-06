@@ -9,7 +9,7 @@ export const metadata = {
  * Template Terms of Service — NOT legal advice, and not something to
  * launch on as-is. See the "Before this goes live" notice at the top of
  * the rendered page for the specific things that need a real answer
- * (confirmed legal entity name/registration/address) and a lawyer's
+ * (confirmed legal entity name/registration) and a lawyer's
  * review (this whole document) before this is relied on for a live,
  * paying userbase. Written to accurately reflect what this codebase
  * actually does today (services/tools_catalog.py's tool list,
@@ -30,8 +30,8 @@ export default function TermsPage() {
       <div className="legal-notice">
         <strong>Before this goes live:</strong> this is a starting template, not a
         finished legal document. It has not been reviewed by a lawyer, and the
-        bracketed fields below (company registration details, address, contact
-        info) are placeholders — TweakHub&rsquo;s payment records currently
+        bracketed fields below (company registration details) are
+        placeholders — TweakHub&rsquo;s payment records currently
         describe it only as <span data-placeholder>&ldquo;a subsidiary of
         OnPoint CRM&rdquo;</span>, which hasn&rsquo;t been confirmed as the
         correct registered entity. Fill in the real details and have this
@@ -45,8 +45,7 @@ export default function TermsPage() {
         and{" "}
         <span data-placeholder>[Registered Company Name]</span>, a company
         registered in <span data-placeholder>[South Africa / registration
-        number]</span>, with its registered address at{" "}
-        <span data-placeholder>[registered address]</span> (&ldquo;TweakHub,&rdquo;
+        number]</span> (&ldquo;TweakHub,&rdquo;
         &ldquo;we,&rdquo; &ldquo;us&rdquo;), trading as TweakHub at
         tweakhub.co.za. By creating an account or using the service, you agree
         to these Terms and to our <Link href="/privacy">Privacy Policy</Link>.
@@ -232,8 +231,7 @@ export default function TermsPage() {
       <h2>14. Contact</h2>
       <p>
         Questions about these Terms:{" "}
-        <a href="mailto:legal@tweakhub.co.za">legal@tweakhub.co.za</a>{" "}
-        <span data-placeholder>[confirm this inbox exists and is monitored]</span>.
+        <a href="mailto:info@tweakhub.co.za">info@tweakhub.co.za</a>.
       </p>
     </main>
   );

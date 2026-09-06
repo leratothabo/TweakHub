@@ -4,6 +4,7 @@ from .payment_attempt import PaymentAttempt, PaymentStatus, PaymentMethod
 from .processing_job import ProcessingJob, JobStatus
 from .organization import Organization, OrganizationMember, OrgRole
 from .bank_reference_counter import BankReferenceCounter
+from .subscription import Subscription, SubscriptionStatus
 
 __all__ = [
     "User",
@@ -19,4 +20,6 @@ __all__ = [
     "OrganizationMember",
     "OrgRole",
     "BankReferenceCounter",
+    "Subscription",
+    "SubscriptionStatus",
 ]

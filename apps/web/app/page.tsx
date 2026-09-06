@@ -7,6 +7,7 @@ import CreditPackages from "@/components/CreditPackages";
 import Logo from "@/components/Logo";
 import OrganizationCard from "@/components/OrganizationCard";
 import ReferralCard from "@/components/ReferralCard";
+import SubscriptionStatus from "@/components/SubscriptionStatus";
 import ToolRouter from "@/components/ToolRouter";
 import { JobResult } from "@/lib/api";
 
@@ -126,6 +127,7 @@ export default function Home() {
 
       <section>
         <h2 style={{ fontSize: 18, marginBottom: 16 }}>Buy credits</h2>
+        <SubscriptionStatus token={token} />
         <CreditPackages token={token} />
       </section>
 

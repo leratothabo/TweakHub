@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     # apps/web's NEXT_PUBLIC_* env vars if/when a checkout UI is built.
     paystack_secret_key: str = ""
     paystack_base_url: str = "https://api.paystack.co"
+    # Paystack Plan codes (plan_XXXXXXXXXX) for the two recurring
+    # subscription tiers (services/subscription_service.py's
+    # SUBSCRIPTION_PLANS) -- created once via `python -m
+    # scripts.setup_paystack_plans` against a real Paystack account, not
+    # generated at request time. Empty defaults, same pattern as
+    # dpo_company_token above; subscription_service.initiate_subscription()
+    # raises a clear error if a plan's code isn't set yet.
+    paystack_plan_code_pro: str = ""
+    paystack_plan_code_business: str = ""
 
     max_upload_mb_free: int = 10
     max_upload_mb_pro: int = 100
@@ -97,6 +106,13 @@ class Settings(BaseSettings):
     rate_limit_login_per_hour: int = 20
     rate_limit_password_reset_per_hour: int = 5
     rate_limit_payments_callback_per_hour: int = 60
+    # Paystack's subscription webhook (routes/payments.py's
+    # POST /api/payments/paystack/webhook) -- separate from the DPO
+    # callback bucket above since it's a different provider hitting a
+    # different endpoint with its own delivery/retry behavior; secured by
+    # HMAC signature (verify_paystack_webhook_signature), not an IP
+    # allowlist, since Paystack doesn't publish fixed source IPs either.
+    rate_limit_paystack_webhook_per_hour: int = 120
 
     # Comma-separated IPs/CIDRs (e.g. "41.79.85.0/24,196.216.192.10") that
     # DPO's payment callback is allowed to arrive from. Empty (the default)

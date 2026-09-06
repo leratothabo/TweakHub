@@ -113,8 +113,7 @@ export default function RefundPolicyPage() {
       <h2>6. How to request a refund</h2>
       <p>
         Email{" "}
-        <a href="mailto:billing@tweakhub.co.za">billing@tweakhub.co.za</a>{" "}
-        <span data-placeholder>[confirm this inbox exists and is monitored]</span>{" "}
+        <a href="mailto:support@tweakhub.co.za">support@tweakhub.co.za</a>{" "}
         with your account email and the transaction in question. We aim to
         respond within <span data-placeholder>[X]</span> business days.
         Approved refunds are returned to the original payment method where

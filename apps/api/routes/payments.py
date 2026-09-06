@@ -13,10 +13,20 @@ and every hit makes an outbound call to DPO, so two more layers sit in
 front of it: an optional source-IP allowlist (DPO_WEBHOOK_IP_ALLOWLIST —
 see config.py for why it defaults to disabled rather than a hardcoded
 list) and a per-IP rate limit, same mechanism as the auth endpoints.
+
+This module also owns the *Paystack* webhook (POST /api/payments/paystack/
+webhook, near the bottom of this file) for the separate recurring-
+subscription feature (services/subscription_service.py) — it lives here
+rather than in routes/subscriptions.py because this file already owns
+every inbound payment-provider callback. Unlike the DPO handler above, it
+trusts its payload directly once signature-verified (HMAC-SHA512 via
+payment_service.verify_paystack_webhook_signature) rather than re-querying
+the provider — see that route's own docstring for why.
 """
 from __future__ import annotations
 
 import ipaddress
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -28,7 +38,7 @@ from config import get_settings
 from db import get_db
 from deps import get_client_ip, get_current_user, rate_limit
 from models import PaymentAttempt, PaymentMethod, PaymentStatus, User
-from services import credit_service, payment_service
+from services import credit_service, payment_service, subscription_service
 from services.payment_service import PaymentServiceError
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
@@ -183,3 +193,49 @@ def bank_transfer_invoice(
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{attempt.bank_reference}.pdf"'},
     )
+
+
+@router.post(
+    "/paystack/webhook",
+    dependencies=[Depends(rate_limit("paystack_webhook", "rate_limit_paystack_webhook_per_hour"))],
+)
+async def paystack_webhook(request: Request, db: Session = Depends(get_db)):
+    """
+    Paystack's server-to-server webhook for subscription lifecycle events
+    (services/subscription_service.py's handle_paystack_event) --
+    configure this URL in the Paystack dashboard once
+    (https://dashboard.paystack.com/#/settings/developer).
+
+    Unlike the DPO callback above (which re-verifies against DPO's own API
+    before trusting anything, since a browser redirect is easy to forge),
+    Paystack's webhook body is trusted directly *because* it's signed:
+    every request must carry a valid `x-paystack-signature` header --
+    HMAC-SHA512 of the exact raw request body, keyed by PAYSTACK_SECRET_KEY
+    (see payment_service.verify_paystack_webhook_signature's docstring for
+    why the raw bytes, read here with `await request.body()` before any
+    JSON parsing, are what must be signed-checked -- re-serializing parsed
+    JSON can byte-for-byte differ from what Paystack actually signed and
+    would make a legitimate webhook fail verification). A request that
+    fails this check is rejected with 400 before any of its contents are
+    used for anything. A per-IP rate limit sits in front of it too, same
+    mechanism as the DPO callback and the auth endpoints, since Paystack
+    also doesn't publish a fixed source-IP range to allowlist against.
+
+    Every event handler in subscription_service.handle_paystack_event is
+    written to be safe against Paystack's own webhook retries (redelivery
+    on timeout/non-2xx is normal, expected behavior, not a rare edge
+    case) -- see that module for the per-event idempotency guards.
+    """
+    raw_body = await request.body()
+    signature = request.headers.get("x-paystack-signature", "")
+    if not payment_service.verify_paystack_webhook_signature(raw_body, signature):
+        logger.warning("Rejected Paystack webhook with missing/invalid signature")
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    try:
+        event = json.loads(raw_body)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    subscription_service.handle_paystack_event(db, event)
+    return {"status": "ok"}

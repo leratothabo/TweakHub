@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from middleware import RequestLoggingMiddleware, SecurityHeadersMiddleware
-from routes import admin, auth, credits, files, jobs, organizations, payments, tools
+from routes import admin, auth, credits, files, jobs, organizations, payments, subscriptions, tools
 
 settings = get_settings()
 
@@ -42,6 +42,7 @@ app.include_router(tools.router)
 app.include_router(jobs.router)
 app.include_router(credits.router)
 app.include_router(payments.router)
+app.include_router(subscriptions.router)
 app.include_router(files.router)
 app.include_router(organizations.router)
 app.include_router(admin.router)

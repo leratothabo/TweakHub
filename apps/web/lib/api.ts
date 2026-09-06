@@ -62,6 +62,31 @@ export type PurchaseResult =
       amount_usd: number;
     };
 
+// -- Recurring subscriptions (routes/subscriptions.py) -----------------
+// Separate from CreditPackage/PurchaseResult above, which is DPO's
+// one-time top-up flow and untouched by this feature. A subscription is
+// billed monthly via Paystack and grants both a PlanTier upgrade and a
+// recurring monthly credit allowance — see services/subscription_service.
+// py's SUBSCRIPTION_PLANS for why its "pro"/"business" keys overlap with
+// (but mean something different from) CreditPackage's.
+
+export interface SubscriptionPlan {
+  plan_tier: "free" | "pro" | "business" | "enterprise";
+  price_usd: number;
+  monthly_credits: number;
+}
+
+export type SubscriptionStatus = "pending" | "active" | "past_due" | "cancelled";
+
+export interface Subscription {
+  id: string;
+  plan_key: string;
+  status: SubscriptionStatus;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  created_at: string | null;
+}
+
 export type JobStatus = "pending" | "processing" | "succeeded" | "failed" | "expired";
 
 /**
@@ -223,6 +248,43 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders(token) },
         body: JSON.stringify({ package_key: packageKey, method }),
+      })
+    );
+  },
+
+  // -- Recurring subscriptions (routes/subscriptions.py) ----------------
+
+  async getSubscriptionPlans(): Promise<{ plans: Record<string, SubscriptionPlan> }> {
+    return handle(await fetch(`${API_URL}/api/subscriptions/plans`));
+  },
+
+  /** The signed-in user's own subscription, or null if they don't have one. */
+  async getMySubscription(token: string): Promise<Subscription | null> {
+    return handle(await fetch(`${API_URL}/api/subscriptions/me`, { headers: authHeaders(token) }));
+  },
+
+  /** Redirect the browser to the returned authorization_url to complete
+   * payment — same redirect pattern as purchaseCredits()'s DPO flow, just
+   * to Paystack's hosted checkout instead. */
+  async subscribe(planKey: string, token: string): Promise<{ subscription_id: string; authorization_url: string }> {
+    return handle(
+      await fetch(`${API_URL}/api/subscriptions/subscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders(token) },
+        body: JSON.stringify({ plan_key: planKey }),
+      })
+    );
+  },
+
+  /** Starts cancellation — cancel_at_period_end flips immediately, but
+   * `status` itself only becomes "cancelled" once Paystack's webhook
+   * confirms it (see subscription_service.cancel_subscription's
+   * docstring), so a re-fetch right after this may still show "active". */
+  async cancelSubscription(token: string): Promise<Subscription> {
+    return handle(
+      await fetch(`${API_URL}/api/subscriptions/cancel`, {
+        method: "POST",
+        headers: authHeaders(token),
       })
     );
   },

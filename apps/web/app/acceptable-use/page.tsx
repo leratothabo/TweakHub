@@ -111,8 +111,8 @@ export default function AcceptableUsePage() {
           against TweakHub&rsquo;s infrastructure without our prior written
           permission — if you&rsquo;ve found a genuine security issue,
           please report it responsibly to{" "}
-          <a href="mailto:security@tweakhub.co.za">security@tweakhub.co.za</a>{" "}
-          <span data-placeholder>[confirm this inbox exists]</span> instead
+          <a href="mailto:support@tweakhub.co.za">support@tweakhub.co.za</a>{" "}
+          instead
         </li>
         <li>
           Using the service in any way that places excessive, abnormal load
@@ -131,18 +131,16 @@ export default function AcceptableUsePage() {
       <p>
         If you think we&rsquo;ve made a mistake about your account or
         content, contact{" "}
-        <a href="mailto:support@tweakhub.co.za">support@tweakhub.co.za</a>{" "}
-        <span data-placeholder>[confirm this inbox exists]</span>.
+        <a href="mailto:support@tweakhub.co.za">support@tweakhub.co.za</a>.
       </p>
 
       <h2>6. Reporting a violation</h2>
       <p>
         If you believe someone is using TweakHub to process illegal content
         or otherwise violate this policy, report it to{" "}
-        <a href="mailto:abuse@tweakhub.co.za">abuse@tweakhub.co.za</a>{" "}
-        <span data-placeholder>[confirm this inbox exists]</span>. Include as
-        much detail as you can — we take reports seriously and investigate
-        promptly.
+        <a href="mailto:support@tweakhub.co.za">support@tweakhub.co.za</a>.
+        Include as much detail as you can — we take reports seriously and
+        investigate promptly.
       </p>
     </main>
   );

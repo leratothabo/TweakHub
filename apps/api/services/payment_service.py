@@ -10,6 +10,8 @@ this will work against DPO's real sandbox or production endpoint.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import io
 from xml.etree import ElementTree as ET
 
@@ -164,18 +166,18 @@ class PaymentService:
         return attempt, payment_url
 
     # -- Paystack (https://paystack.com/docs/api) -------------------------
-    # Backend plumbing only, mirroring the DPO methods above's shape
-    # (initiate -> get a redirect/authorization target, verify -> a
-    # server-to-server status check). Not yet called from
-    # create_payment_attempt()/credit_service.initiate_purchase() or
-    # added to the PaymentMethod enum -- whether Paystack replaces DPO,
-    # sits alongside it, or stays unused is a separate decision. When
-    # that's made, wire these in the same way initiate_dpo_payment() /
-    # verify_dpo_payment() are wired into create_payment_attempt() and
-    # routes/payments.py's callback handler above -- in particular, keep
-    # verify_paystack_transaction() as the source of truth the way
-    # verify_dpo_payment() is; never grant credits off a client-reported
-    # "it worked" alone.
+    # DPO remains the processor for one-time credit purchases (the
+    # PaymentMethod enum, create_payment_attempt() above, and
+    # credit_service.initiate_purchase()'s CREDIT_PACKAGES flow are all
+    # DPO-only and untouched by this section). Paystack is instead used
+    # exclusively for the *recurring subscription* flow --
+    # services/subscription_service.py calls initialize_paystack_transaction
+    # (with `plan` set, so Paystack auto-creates the Subscription once the
+    # first charge succeeds) and disable_paystack_subscription; the
+    # webhook handler in routes/payments.py verifies every inbound event
+    # with verify_paystack_webhook_signature before trusting it. These two
+    # processors deliberately don't share a code path: never wire Paystack
+    # into the one-time CREDIT_PACKAGES purchase flow or vice versa.
 
     def initialize_paystack_transaction(
         self,
@@ -183,6 +185,7 @@ class PaymentService:
         amount_kobo: int,
         reference: str | None = None,
         callback_url: str | None = None,
+        plan: str | None = None,
     ) -> dict:
         """
         POST /transaction/initialize. amount_kobo is the charge in the
@@ -190,6 +193,14 @@ class PaymentService:
         for USD/GHS/ZAR/KES, etc.) -- Paystack's API takes an integer
         subunit amount, never a decimal major-unit amount, so convert
         before calling this (e.g. amount_kobo = round(amount_usd * 100)).
+
+        `plan` is a Paystack Plan code (plan_XXXXXXXXXX, from
+        scripts/setup_paystack_plans.py) -- when set, Paystack
+        automatically creates a Subscription tied to this transaction's
+        customer once it succeeds, and will keep charging that customer
+        on the plan's interval from then on (see subscription_service.py).
+        Leave unset for a one-time charge with no recurrence, which is
+        what every non-subscription caller of this method wants.
 
         Returns the response's `data` object on success:
         {"authorization_url": ..., "access_code": ..., "reference": ...}
@@ -207,6 +218,8 @@ class PaymentService:
             payload["reference"] = reference
         if callback_url:
             payload["callback_url"] = callback_url
+        if plan:
+            payload["plan"] = plan
 
         try:
             response = httpx.post(
@@ -262,6 +275,79 @@ class PaymentService:
         if not data.get("status"):
             raise PaymentServiceError("Paystack verify response missing data.status")
         return data
+
+    def disable_paystack_subscription(self, subscription_code: str, email_token: str) -> None:
+        """
+        POST /subscription/disable -- stops future charges on a
+        subscription. Both arguments come off the Subscription row
+        (paystack_subscription_code/paystack_email_token), filled in from
+        the `subscription.create` webhook (see subscription_service.py);
+        Paystack requires the subscription's own per-customer email_token
+        alongside its code, not just the code, as a lightweight proof
+        the caller actually has the subscription's details rather than
+        just guessing a code. Does not itself flip anything in our DB --
+        subscription_service.cancel_subscription() only sets
+        cancel_at_period_end optimistically and waits for Paystack's own
+        `subscription.disable` webhook to confirm before marking the row
+        CANCELLED, same "webhook/verify is the source of truth" principle
+        as DPO's callback (see routes/payments.py's docstring).
+        """
+        # get_settings() fresh here (not self.settings, which is a
+        # snapshot taken once when the module-level `payment_service`
+        # singleton was constructed) -- same reasoning as deps.py's
+        # rate_limit() dependency reading settings at call time: this
+        # method is brand new and has no existing callers depending on
+        # the snapshot behavior, so there's no reason to inherit it, and
+        # reading fresh is what lets tests flip PAYSTACK_SECRET_KEY via
+        # the override_settings fixture and have it actually take effect.
+        settings = get_settings()
+        if not settings.paystack_secret_key:
+            raise PaymentServiceError("PAYSTACK_SECRET_KEY is not configured")
+
+        try:
+            response = httpx.post(
+                f"{settings.paystack_base_url}/subscription/disable",
+                json={"code": subscription_code, "token": email_token},
+                headers={
+                    "Authorization": f"Bearer {settings.paystack_secret_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PaymentServiceError(f"Paystack subscription disable request failed: {exc}") from exc
+
+        body = response.json()
+        if not body.get("status"):
+            raise PaymentServiceError(f"Paystack subscription disable failed: {body.get('message', 'Unknown error')}")
+
+    def verify_paystack_webhook_signature(self, raw_body: bytes, signature_header: str) -> bool:
+        """
+        Paystack signs every webhook POST with HMAC-SHA512 of the raw
+        request body, keyed by the account's secret key, sent as the
+        `x-paystack-signature` header (hex-encoded) -- see
+        https://paystack.com/docs/payments/webhooks/#verifying-events.
+        This is the *only* thing that makes routes/payments.py's public,
+        unauthenticated webhook route trustworthy: unlike the DPO
+        callback (which re-verifies against DPO's own API before trusting
+        anything -- see that route's docstring), Paystack's webhook body
+        is trusted directly once its signature checks out, so this check
+        must run before any parsing of the body and reject anything that
+        fails it. Uses hmac.compare_digest for the comparison, not `==`,
+        so a wrong-length or wrong-value signature can't be distinguished
+        by response-time side channel.
+        """
+        settings = get_settings()  # fresh, not self.settings -- see disable_paystack_subscription's comment above
+        if not settings.paystack_secret_key or not signature_header:
+            return False
+
+        expected = hmac.new(
+            settings.paystack_secret_key.encode("utf-8"),
+            raw_body,
+            hashlib.sha512,
+        ).hexdigest()
+        return hmac.compare_digest(expected, signature_header.strip())
 
     # -- Direct bank transfer (no DPO involved) --------------------------
 
