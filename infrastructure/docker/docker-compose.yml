@@ -55,6 +55,19 @@ services:
       dockerfile: infrastructure/docker/Dockerfile.api
     ports:
       - "3001:3001"
+    # Loads every var in .env.production into the container as-is (Google/
+    # Paystack/SMTP/rate-limit/etc. settings config.py reads directly from
+    # the process environment) -- found missing on a real deploy: this
+    # service used to hand-mirror only a subset of vars below in
+    # `environment:`, so anything not explicitly listed there (GOOGLE_
+    # CLIENT_ID/SECRET, PAYSTACK_SECRET_KEY, PAYSTACK_PLAN_CODE_*, SMTP_*)
+    # was silently ignored no matter what .env.production said -- Paystack
+    # payments and SMTP delivery were effectively broken in production.
+    # `environment:` below still wins over same-key entries here for the
+    # handful of vars that need compose-level ${...} interpolation
+    # (falling back to the bundled Postgres/Redis/MinIO containers' own
+    # defaults when unset) rather than a raw pass-through.
+    env_file: ../../.env.production
     environment:
       - NODE_ENV=production
       # Interpolated from .env.production (falling back to the bundled
@@ -115,6 +128,9 @@ services:
     # fallback order as that module, so this worker is never listening on
     # a different Redis than the API is enqueuing to.
     command: ["rq", "worker", "${JOB_QUEUE_NAME:-tweakhub-tools}", "--url", "${JOB_QUEUE_REDIS_URL:-${REDIS_URL:-redis://redis:6379/0}}"]
+    # See `api`'s env_file comment above -- same full-.env.production
+    # pass-through, same environment: precedence for the interpolated vars.
+    env_file: ../../.env.production
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgresql://tweakhub:${POSTGRES_PASSWORD:-tweakhub}@postgres:5432/tweakhub}
@@ -155,6 +171,9 @@ services:
     healthcheck:
       disable: true
     command: ["sh", "-c", "while true; do python -m scripts.cleanup_expired_outputs; sleep 3600; done"]
+    # See `api`'s env_file comment above -- same full-.env.production
+    # pass-through, same environment: precedence for the interpolated vars.
+    env_file: ../../.env.production
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgresql://tweakhub:${POSTGRES_PASSWORD:-tweakhub}@postgres:5432/tweakhub}
