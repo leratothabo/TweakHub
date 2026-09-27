@@ -56,10 +56,12 @@ export default function Home() {
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <Logo size={40} />
           <div>
-            <h1 style={{ margin: 0, fontSize: 28 }}>TweakHub</h1>
-            <p style={{ margin: "4px 0 0", color: "var(--text-muted)" }}>
+            {/* Logo already renders the "tweakhub" wordmark as text next to
+                the icon -- this is the page's only h1 (a11y/SEO still want
+                one), just without repeating the name a second time. */}
+            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 400, color: "var(--text-muted)" }}>
               200+ file tools for Africa — PDF, image, video, audio, documents.
-            </p>
+            </h1>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
