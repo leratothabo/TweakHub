@@ -23,6 +23,9 @@ export default function AuthPanel({ onAuthenticated }: Props) {
   // component doesn't force a Suspense boundary onto its page just for a
   // client-only convenience.
   const [referralCode, setReferralCode] = useState<string | null>(null);
+  // Opt-in only -- unchecked by default, never assumed true. See
+  // services/subscriber_service.py on the API side.
+  const [marketingConsent, setMarketingConsent] = useState(false);
   // Only shown once we've confirmed the API has GOOGLE_CLIENT_ID/SECRET
   // configured — otherwise the button would just 501 on click.
   const [googleEnabled, setGoogleEnabled] = useState(false);
@@ -51,7 +54,7 @@ export default function AuthPanel({ onAuthenticated }: Props) {
     setNotice(null);
     try {
       if (mode === "signup") {
-        const res = await api.signup(email, password, fullName || undefined, referralCode || undefined);
+        const res = await api.signup(email, password, fullName || undefined, referralCode || undefined, marketingConsent);
         setNotice(res.message);
         setMode("login");
       } else {
@@ -107,6 +110,16 @@ export default function AuthPanel({ onAuthenticated }: Props) {
         {mode === "login" ? "Need an account?" : "Have an account?"}
       </button>
 
+      {mode === "signup" && (
+        <label style={styles.consentLabel}>
+          <input
+            type="checkbox"
+            checked={marketingConsent}
+            onChange={(e) => setMarketingConsent(e.target.checked)}
+          />
+          Email me product news and offers (optional)
+        </label>
+      )}
       {mode === "signup" && referralCode && (
         <p style={styles.notice}>
           Signing up via an invite ({referralCode}) — you&apos;ll both get bonus credits once you
@@ -148,6 +161,14 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-muted)",
     fontSize: 12,
     textDecoration: "underline",
+  },
+  consentLabel: {
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    fontSize: 12,
+    color: "var(--text-muted)",
   },
   error: { width: "100%", color: "var(--danger)", fontSize: 13, margin: 0 },
   notice: { width: "100%", color: "var(--success)", fontSize: 13, margin: 0 },

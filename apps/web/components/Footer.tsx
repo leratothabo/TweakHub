@@ -1,4 +1,5 @@
 import Link from "next/link";
+import NewsletterSignupForm from "./NewsletterSignupForm";
 
 /**
  * Site-wide footer — the only place these policy pages are linked from
@@ -18,6 +19,7 @@ export default function Footer() {
         <Link href="/refund-policy">Refund Policy</Link>
         <Link href="/acceptable-use">Acceptable Use</Link>
       </nav>
+      <NewsletterSignupForm />
     </footer>
   );
 }

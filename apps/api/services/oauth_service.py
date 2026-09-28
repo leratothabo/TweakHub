@@ -47,8 +47,9 @@ import httpx
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import PlanTier, User
+from models import PlanTier, SubscriberSource, User
 
+from . import subscriber_service
 from .auth_service import SIGNUP_BONUS_CREDITS, generate_referral_code
 
 STATE_TTL_SECONDS = 600
@@ -169,4 +170,16 @@ def get_or_create_user_from_google(db: Session, userinfo: dict) -> User:
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    # No signup form here to show a consent checkbox on, so no consent is
+    # captured and no list membership is created — same opt-in-only rule
+    # as the password signup path (services/auth_service.py.signup),
+    # just with marketing_consent hardcoded False since there's nothing
+    # to ask. A Subscriber row is still created (unconsented) so this
+    # user is tracked for the mini-CRM view and can opt in later.
+    subscriber_service.create_or_update_subscriber(
+        db, user.email, user_id=user.id, full_name=user.full_name,
+        source=SubscriberSource.SIGNUP, marketing_consent=False,
+        consent_source="google_oauth_signup",
+    )
     return user

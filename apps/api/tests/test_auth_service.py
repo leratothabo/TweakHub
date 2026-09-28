@@ -16,6 +16,18 @@ def test_signup_creates_unverified_user_with_bonus_credits(db_session):
     assert user.password_hash != "correct horse battery"  # never store plaintext
 
 
+def test_signup_defaults_marketing_consent_to_false(db_session):
+    # marketing_consent is opt-in only -- omitting the argument entirely
+    # (the shape every pre-existing signup() call site in this repo uses)
+    # must never be silently treated as consent. See
+    # test_subscriber_service.py for the Subscriber-row-level assertions.
+    from models import Subscriber
+
+    auth_service.signup(db_session, "no-consent-arg@example.com", "correct horse battery", None)
+    subscriber = db_session.query(Subscriber).filter(Subscriber.email == "no-consent-arg@example.com").first()
+    assert subscriber.marketing_consent is False
+
+
 def test_signup_generates_a_unique_referral_code(db_session):
     a = auth_service.signup(db_session, "refcode-a@example.com", "correct horse battery", None)
     b = auth_service.signup(db_session, "refcode-b@example.com", "correct horse battery", None)

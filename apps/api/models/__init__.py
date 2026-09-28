@@ -5,6 +5,9 @@ from .processing_job import ProcessingJob, JobStatus
 from .organization import Organization, OrganizationMember, OrgRole
 from .bank_reference_counter import BankReferenceCounter
 from .subscription import Subscription, SubscriptionStatus
+from .subscriber import Subscriber, SubscriberSource, SubscriberStatus
+from .subscriber_list import SubscriberList, SubscriberListMembership, MembershipStatus
+from .campaign import Campaign, CampaignStatus, CampaignRecipient, CampaignRecipientStatus
 
 __all__ = [
     "User",
@@ -22,4 +25,14 @@ __all__ = [
     "BankReferenceCounter",
     "Subscription",
     "SubscriptionStatus",
+    "Subscriber",
+    "SubscriberSource",
+    "SubscriberStatus",
+    "SubscriberList",
+    "SubscriberListMembership",
+    "MembershipStatus",
+    "Campaign",
+    "CampaignStatus",
+    "CampaignRecipient",
+    "CampaignRecipientStatus",
 ]

@@ -164,6 +164,28 @@ class Settings(BaseSettings):
     google_token_url: str = "https://oauth2.googleapis.com/token"
     google_userinfo_url: str = "https://www.googleapis.com/oauth2/v3/userinfo"
 
+    # -- Bulk email / campaigns: Brevo (https://www.brevo.com) --
+    # Two separate integration points share these credentials but are
+    # separate code paths: (1) services/email_service.py's existing
+    # SmtpEmailBackend, pointed at Brevo's SMTP relay purely via .env
+    # values (EMAIL_BACKEND=smtp, SMTP_HOST=smtp-relay.brevo.com, ...) --
+    # that's the fix for EMAIL_BACKEND=console never actually delivering
+    # verification emails, and needs no code here; (2)
+    # services/brevo_service.py below, a separate HTTP-API client for
+    # bulk campaign sends, which plain SMTP can't do with per-send
+    # tracking. Empty defaults; brevo_service raises BrevoServiceError if
+    # a send is attempted before these are set, same as
+    # paystack_secret_key/ozow_* above.
+    brevo_api_key: str = ""
+    brevo_base_url: str = "https://api.brevo.com/v3"
+    brevo_sender_email: str = ""
+    brevo_sender_name: str = "TweakHub"
+    # Admin-only endpoint (routes/campaigns.py's POST .../send) -- a flat
+    # per-admin-user limit, not plan-tier-derived like the tool-processing
+    # limits above.
+    rate_limit_campaign_send_per_hour: int = 5
+    rate_limit_newsletter_signup_per_hour: int = 10
+
 
 @lru_cache
 def get_settings() -> Settings:

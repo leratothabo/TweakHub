@@ -314,13 +314,22 @@ export const api = {
     /** Another user's referral code (see api.getReferral) — usually
      * picked up from a `?ref=` link, not typed in by hand. An unknown or
      * stale code is silently ignored server-side, not an error. */
-    ref?: string
+    ref?: string,
+    /** Opt-in only -- defaults false, never assumed true. See
+     * services/subscriber_service.py on the API side. */
+    marketingConsent?: boolean
   ): Promise<{ user_id: string; email: string; is_email_verified: boolean; message: string }> {
     return handle(
       await fetch(`${API_URL}/api/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, full_name: fullName, ref: ref || undefined }),
+        body: JSON.stringify({
+          email,
+          password,
+          full_name: fullName,
+          ref: ref || undefined,
+          marketing_consent: marketingConsent ?? false,
+        }),
       })
     );
   },
@@ -470,6 +479,116 @@ export const api = {
       })
     );
   },
+
+  // -- Public newsletter signup / unsubscribe (routes/subscribers.py) -----
+  // Opt-in only: newsletterSignup rejects consent=false server-side too.
+
+  async newsletterSignup(email: string, consent: boolean): Promise<{ message: string }> {
+    return handle(
+      await fetch(`${API_URL}/api/subscribers/newsletter-signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, consent }),
+      })
+    );
+  },
+
+  async unsubscribe(token: string): Promise<{ message: string }> {
+    return handle(
+      await fetch(`${API_URL}/api/subscribers/unsubscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      })
+    );
+  },
+
+  // -- Admin: subscriber lists (routes/admin.py) -- no UI yet, functions
+  // are here ready for a later admin-screen pass. Gated server-side by
+  // User.is_admin.
+
+  async listSubscriberLists(token: string): Promise<{ lists: SubscriberListInfo[] }> {
+    return handle(
+      await fetch(`${API_URL}/api/admin/subscriber-lists`, { headers: authHeaders(token) })
+    );
+  },
+
+  async createSubscriberList(name: string, description: string | undefined, token: string): Promise<{ id: string; name: string }> {
+    return handle(
+      await fetch(`${API_URL}/api/admin/subscriber-lists`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders(token) },
+        body: JSON.stringify({ name, description }),
+      })
+    );
+  },
+
+  async listSubscribersInList(listId: string, token: string): Promise<{ subscribers: SubscriberInfo[] }> {
+    return handle(
+      await fetch(`${API_URL}/api/admin/subscriber-lists/${listId}/subscribers`, { headers: authHeaders(token) })
+    );
+  },
+
+  async addSubscribersToList(listId: string, emails: string[], token: string): Promise<{ added: number }> {
+    return handle(
+      await fetch(`${API_URL}/api/admin/subscriber-lists/${listId}/subscribers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders(token) },
+        body: JSON.stringify({ emails }),
+      })
+    );
+  },
+
+  async removeSubscriberFromList(listId: string, subscriberId: string, token: string): Promise<{ message: string }> {
+    return handle(
+      await fetch(`${API_URL}/api/admin/subscriber-lists/${listId}/subscribers/${subscriberId}`, {
+        method: "DELETE",
+        headers: authHeaders(token),
+      })
+    );
+  },
+
+  // -- Admin: bulk email campaigns (routes/campaigns.py) -- no UI yet.
+
+  async createCampaign(
+    payload: { name: string; subject: string; body_html: string; subscriber_list_id: string },
+    token: string
+  ): Promise<CampaignInfo> {
+    return handle(
+      await fetch(`${API_URL}/api/admin/campaigns`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders(token) },
+        body: JSON.stringify(payload),
+      })
+    );
+  },
+
+  async listCampaigns(token: string): Promise<{ campaigns: CampaignInfo[] }> {
+    return handle(
+      await fetch(`${API_URL}/api/admin/campaigns`, { headers: authHeaders(token) })
+    );
+  },
+
+  async getCampaign(campaignId: string, token: string): Promise<CampaignInfo> {
+    return handle(
+      await fetch(`${API_URL}/api/admin/campaigns/${campaignId}`, { headers: authHeaders(token) })
+    );
+  },
+
+  async listCampaignRecipients(campaignId: string, token: string): Promise<{ recipients: CampaignRecipientInfo[] }> {
+    return handle(
+      await fetch(`${API_URL}/api/admin/campaigns/${campaignId}/recipients`, { headers: authHeaders(token) })
+    );
+  },
+
+  async sendCampaign(campaignId: string, token: string): Promise<CampaignInfo> {
+    return handle(
+      await fetch(`${API_URL}/api/admin/campaigns/${campaignId}/send`, {
+        method: "POST",
+        headers: authHeaders(token),
+      })
+    );
+  },
 };
 
 export interface PendingBankTransfer {
@@ -497,4 +616,40 @@ export interface OrganizationInfo {
   credit_balance: number;
   my_role: "owner" | "admin" | "member";
   members: OrgMember[];
+}
+
+export interface SubscriberListInfo {
+  id: string;
+  name: string;
+  description: string | null;
+  is_default: boolean;
+  member_count: number;
+}
+
+export interface SubscriberInfo {
+  id: string;
+  email: string;
+  full_name: string | null;
+  status: "active" | "unsubscribed" | "bounced";
+  source: "signup" | "newsletter_form" | "import" | "manual";
+  marketing_consent: boolean;
+}
+
+export interface CampaignInfo {
+  id: string;
+  name: string;
+  subject: string;
+  subscriber_list_id: string;
+  status: "draft" | "queued" | "sending" | "sent" | "failed";
+  recipient_count: number;
+  sent_at: string | null;
+  created_at: string | null;
+}
+
+export interface CampaignRecipientInfo {
+  id: string;
+  subscriber_id: string;
+  status: "pending" | "sent" | "delivered" | "opened" | "clicked" | "bounced" | "failed" | "unsubscribed";
+  error: string | null;
+  sent_at: string | null;
 }

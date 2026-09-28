@@ -49,6 +49,9 @@ class SignupRequest(BaseModel):
     # the signup. See routes/auth.py's GET /referral for where a user
     # gets their own code to share.
     ref: str | None = None
+    # Opt-in only -- defaults False, never assumed true. See
+    # services/subscriber_service.py.
+    marketing_consent: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -77,7 +80,8 @@ class ResetPasswordRequest(BaseModel):
 def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     try:
         user = auth_service.signup(
-            db, payload.email, payload.password, payload.full_name, referral_code=payload.ref
+            db, payload.email, payload.password, payload.full_name, referral_code=payload.ref,
+            marketing_consent=payload.marketing_consent,
         )
     except AuthError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

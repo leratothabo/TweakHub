@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from middleware import RequestLoggingMiddleware, SecurityHeadersMiddleware
-from routes import admin, auth, credits, files, jobs, organizations, payments, subscriptions, tools
+from routes import admin, auth, campaigns, credits, files, jobs, organizations, payments, subscribers, subscriptions, tools
 
 settings = get_settings()
 
@@ -46,6 +46,8 @@ app.include_router(subscriptions.router)
 app.include_router(files.router)
 app.include_router(organizations.router)
 app.include_router(admin.router)
+app.include_router(subscribers.router)
+app.include_router(campaigns.router)
 
 
 @app.get("/health")

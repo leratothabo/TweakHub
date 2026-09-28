@@ -17,7 +17,8 @@ import bcrypt
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import User
+from models import SubscriberSource, User
+from . import subscriber_service
 from .credit_service import credit_service
 from .email_service import email_service
 
@@ -80,7 +81,7 @@ class AuthService:
 
     def signup(
         self, db: Session, email: str, password: str, full_name: str | None,
-        referral_code: str | None = None,
+        referral_code: str | None = None, marketing_consent: bool = False,
     ) -> User:
         if len(password) < 8:
             raise AuthError("Password must be at least 8 characters")
@@ -110,6 +111,18 @@ class AuthService:
         db.add(user)
         db.commit()
         db.refresh(user)
+
+        # Opt-in only -- marketing_consent defaults to False, and this
+        # never adds someone to a mailing list unless the signup form's
+        # checkbox was actually checked. See services/subscriber_service.py.
+        subscriber = subscriber_service.create_or_update_subscriber(
+            db, user.email, user_id=user.id, full_name=user.full_name,
+            source=SubscriberSource.SIGNUP, marketing_consent=marketing_consent,
+            consent_source="signup_checkbox",
+        )
+        if marketing_consent:
+            default_list = subscriber_service.get_or_create_default_list(db)
+            subscriber_service.add_to_list(db, default_list, subscriber)
 
         email_service.send_verification_email(user.email, user.email_verification_token)
         return user
