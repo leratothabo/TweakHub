@@ -282,7 +282,7 @@ export default function AdminPage() {
                       <td style={styles.td}>
                         {row.package_key} ({row.credits.toLocaleString()} credits)
                       </td>
-                      <td style={styles.td}>{row.amount_usd.toFixed(2)} USD</td>
+                      <td style={styles.td}>{row.amount_zar !== null ? rand(row.amount_zar) : `${row.amount_usd.toFixed(2)} USD`}</td>
                       <td style={styles.td}>{row.created_at ? new Date(row.created_at).toLocaleString() : "—"}</td>
                       <td style={styles.td}>
                         <button

@@ -197,6 +197,7 @@ class CreditService:
                 "bank_details": BANK_TRANSFER_DETAILS,
                 "credits": package["credits"],
                 "amount_usd": package["price_usd"],
+                "amount_zar": float(package["price_zar"]),
             }
 
         attempt, payment_url = payment_service.create_payment_attempt(

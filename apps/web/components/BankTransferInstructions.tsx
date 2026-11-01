@@ -62,14 +62,16 @@ export default function BankTransferInstructions({ result, token }: Props) {
         <dd style={styles.dd}>{bank_details.account_number}</dd>
 
         <dt style={styles.dt}>Amount</dt>
-        <dd style={styles.dd}>{result.amount_usd.toFixed(2)} USD</dd>
+        <dd style={{ ...styles.dd, fontWeight: 700 }}>
+          R{result.amount_zar.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </dd>
 
         <dt style={styles.dt}>Reference</dt>
         <dd style={{ ...styles.dd, ...styles.reference }}>{result.bank_reference}</dd>
       </dl>
 
       <p style={styles.notice}>
-        Use the reference above on your transfer so we can match your payment. Your{" "}
+        Pay the exact rand amount and use the reference above on your transfer so we can match your payment. Your{" "}
         {result.credits.toLocaleString()} credits are added once we confirm the deposit — usually within
         one business day.
       </p>
