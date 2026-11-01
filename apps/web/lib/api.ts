@@ -480,6 +480,36 @@ export const api = {
     );
   },
 
+  // -- Admin: bank-statement reconciliation (routes/admin.py +
+  // services/bank_reconciliation.py). Preview is read-only; nothing is
+  // credited until confirmStatementMatches() is called with the ids the
+  // admin ticked.
+
+  async previewBankStatement(file: File, token: string): Promise<StatementPreview> {
+    const form = new FormData();
+    form.append("statement", file);
+    return handle(
+      await fetch(`${API_URL}/api/admin/bank-statements/preview`, {
+        method: "POST",
+        headers: authHeaders(token),
+        body: form,
+      })
+    );
+  },
+
+  async confirmStatementMatches(
+    attemptIds: string[],
+    token: string
+  ): Promise<{ confirmed: string[]; skipped: { attempt_id: string; reason: string }[] }> {
+    return handle(
+      await fetch(`${API_URL}/api/admin/bank-statements/confirm`, {
+        method: "POST",
+        headers: { ...authHeaders(token), "Content-Type": "application/json" },
+        body: JSON.stringify({ attempt_ids: attemptIds }),
+      })
+    );
+  },
+
   // -- Public newsletter signup / unsubscribe (routes/subscribers.py) -----
   // Opt-in only: newsletterSignup rejects consent=false server-side too.
 
@@ -590,6 +620,30 @@ export const api = {
     );
   },
 };
+
+export type StatementMatchStatus =
+  | "match"
+  | "underpaid"
+  | "unknown_reference"
+  | "not_pending"
+  | "already_confirmed";
+
+export interface StatementRow {
+  reference: string;
+  status: StatementMatchStatus;
+  paid_zar: number | null;
+  expected_zar: number | null;
+  attempt_id: string | null;
+  user_email: string | null;
+  package_key: string | null;
+  credits: number | null;
+  statement_lines: string[];
+}
+
+export interface StatementPreview {
+  rows: StatementRow[];
+  summary: { lines_with_reference: number; matches: number; needs_review: number; already_confirmed: number };
+}
 
 export interface PendingBankTransfer {
   id: string;

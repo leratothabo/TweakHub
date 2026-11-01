@@ -14,7 +14,7 @@ database for whoever should have access to this.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -31,7 +31,7 @@ from models import (
     SubscriberSource,
     User,
 )
-from services import credit_service, subscriber_service
+from services import bank_reconciliation, credit_service, subscriber_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -65,20 +65,13 @@ def list_pending_bank_transfers(
     return {"pending": results}
 
 
-@router.post("/bank-transfers/{attempt_id}/confirm")
-def confirm_bank_transfer(
-    attempt_id: str,
-    _: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
+def _confirm_bank_transfer_attempt(db: Session, attempt: PaymentAttempt) -> dict:
     """Marks the attempt SUCCEEDED and grants credits — idempotent, same
     "only grant once" guard as routes/payments.py's DPO callback
     (credit_service.grant_purchased_credits checks credits_granted), so a
-    double-click or a retried request can't double-credit the account."""
-    attempt = db.get(PaymentAttempt, attempt_id)
-    if attempt is None or attempt.method != PaymentMethod.BANK_TRANSFER:
-        raise HTTPException(status_code=404, detail="Unknown bank-transfer payment")
-
+    double-click, a retried request, or the same statement uploaded twice
+    can't double-credit the account. Shared by the one-row "Mark received"
+    button and the statement-upload batch confirm below."""
     if attempt.status == PaymentStatus.SUCCEEDED:
         return {"status": attempt.status.value, "credits_granted": attempt.credits_granted}
 
@@ -98,6 +91,70 @@ def confirm_bank_transfer(
             pass
 
     return {"status": attempt.status.value, "credits_granted": True}
+
+
+@router.post("/bank-transfers/{attempt_id}/confirm")
+def confirm_bank_transfer(
+    attempt_id: str,
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    attempt = db.get(PaymentAttempt, attempt_id)
+    if attempt is None or attempt.method != PaymentMethod.BANK_TRANSFER:
+        raise HTTPException(status_code=404, detail="Unknown bank-transfer payment")
+    return _confirm_bank_transfer_attempt(db, attempt)
+
+
+# -- Statement reconciliation (services/bank_reconciliation.py) -------------
+# Upload the bank's CSV export -> preview proposed matches (read-only) ->
+# admin ticks the rows they agree with -> batch confirm. Two steps on
+# purpose: the parser is heuristic (bank CSV layouts vary), so a human
+# sees every parsed amount before any credits move.
+
+MAX_STATEMENT_BYTES = 5 * 1024 * 1024
+
+
+class ConfirmBatchRequest(BaseModel):
+    attempt_ids: list[str]
+
+
+@router.post("/bank-statements/preview")
+async def preview_bank_statement(
+    statement: UploadFile = File(...),
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    raw = await statement.read(MAX_STATEMENT_BYTES + 1)
+    if len(raw) > MAX_STATEMENT_BYTES:
+        raise HTTPException(status_code=413, detail="Statement file is larger than 5 MB.")
+    try:
+        return bank_reconciliation.preview_statement(db, raw)
+    except bank_reconciliation.StatementParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/bank-statements/confirm")
+def confirm_bank_transfers_batch(
+    payload: ConfirmBatchRequest,
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Confirms each listed attempt through the same idempotent path as the
+    single-row button. Unknown ids or non-bank-transfer attempts are
+    reported, not raised, so one bad id doesn't block the rest."""
+    confirmed: list[str] = []
+    skipped: list[dict] = []
+    for attempt_id in dict.fromkeys(payload.attempt_ids):
+        attempt = db.get(PaymentAttempt, attempt_id)
+        if attempt is None or attempt.method != PaymentMethod.BANK_TRANSFER:
+            skipped.append({"attempt_id": attempt_id, "reason": "unknown bank-transfer payment"})
+            continue
+        if attempt.status not in (PaymentStatus.PENDING, PaymentStatus.SUCCEEDED):
+            skipped.append({"attempt_id": attempt_id, "reason": f"payment is {attempt.status.value}"})
+            continue
+        _confirm_bank_transfer_attempt(db, attempt)
+        confirmed.append(attempt_id)
+    return {"confirmed": confirmed, "skipped": skipped}
 
 
 # -- Subscriber lists (services/subscriber_service.py) -----------------------
