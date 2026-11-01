@@ -208,3 +208,48 @@ def test_admin_confirm_404s_for_unknown_attempt(client, db_session):
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert res.status_code == 404
+
+
+# -- amounts are quoted in ZAR (TweakHub's account is a rand account) -------
+
+
+def test_bank_transfer_invoice_pdf_shows_rand_amount_not_usd(db_session):
+    from pypdf import PdfReader
+
+    user = _signup(db_session, "bank-invoice-zar@example.com")
+    attempt = payment_service.create_bank_transfer_attempt(
+        db=db_session, user=user, package_key="business", amount_usd=99.99, credits=10000
+    )
+    text = PdfReader(io.BytesIO(payment_service.generate_bank_transfer_invoice_pdf(attempt, user))).pages[
+        0
+    ].extract_text()
+    assert "R1,850.00" in text
+    assert "USD" not in text
+
+
+def test_initiate_purchase_bank_transfer_returns_amount_zar(db_session):
+    user = _signup(db_session, "purchase-bank-zar@example.com")
+    result = credit_service.initiate_purchase(db_session, user, "popular", PaymentMethod.BANK_TRANSFER)
+    assert result["amount_zar"] == 185.0
+
+
+def test_admin_pending_list_includes_amount_zar(client, db_session):
+    from models import User
+
+    customer_token = _signup_and_login(client, "pending-zar-customer@example.com")
+    purchase = client.post(
+        "/api/credits/purchase",
+        json={"package_key": "pro", "method": "bank_transfer"},
+        headers={"Authorization": f"Bearer {customer_token}"},
+    ).json()
+    admin_token = _signup_and_login(client, "pending-zar-admin@example.com")
+    admin = db_session.query(User).filter(User.email == "pending-zar-admin@example.com").first()
+    admin.is_admin = True
+    db_session.add(admin)
+    db_session.commit()
+
+    pending = client.get(
+        "/api/admin/bank-transfers/pending", headers={"Authorization": f"Bearer {admin_token}"}
+    ).json()["pending"]
+    row = next(r for r in pending if r["id"] == purchase["payment_attempt_id"])
+    assert row["amount_zar"] == 555.0

@@ -32,6 +32,7 @@ from models import (
     User,
 )
 from services import bank_reconciliation, credit_service, subscriber_service
+from services.payment_service import payment_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -57,6 +58,7 @@ def list_pending_bank_transfers(
                 "user_email": user.email if user else None,
                 "package_key": attempt.package_key,
                 "amount_usd": float(attempt.amount_usd),
+                "amount_zar": payment_service.bank_transfer_amount_zar(attempt.package_key),
                 "credits": attempt.credits,
                 "bank_reference": attempt.bank_reference,
                 "created_at": attempt.created_at.isoformat() if attempt.created_at else None,

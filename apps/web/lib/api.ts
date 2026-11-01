@@ -60,6 +60,7 @@ export type PurchaseResult =
       bank_details: BankTransferDetails;
       credits: number;
       amount_usd: number;
+      amount_zar: number;
     };
 
 // -- Recurring subscriptions (routes/subscriptions.py) -----------------
@@ -650,6 +651,7 @@ export interface PendingBankTransfer {
   user_email: string | null;
   package_key: string;
   amount_usd: number;
+  amount_zar: number | null;
   credits: number;
   bank_reference: string;
   created_at: string | null;

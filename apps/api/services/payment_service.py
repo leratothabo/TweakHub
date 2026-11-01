@@ -400,6 +400,18 @@ class PaymentService:
         db.refresh(attempt)
         return attempt
 
+    @staticmethod
+    def bank_transfer_amount_zar(package_key: str) -> float | None:
+        """What the customer must actually EFT. TweakHub's bank account is
+        a ZAR Standard Bank account, so a bank transfer is always quoted
+        in rand (the package's price_zar), never amount_usd — the same
+        figure services/bank_reconciliation.py checks the statement
+        against. Imported lazily: credit_service imports this module."""
+        from .credit_service import CREDIT_PACKAGES
+
+        package = CREDIT_PACKAGES.get(package_key)
+        return float(package["price_zar"]) if package else None
+
     def generate_bank_transfer_invoice_pdf(self, attempt: PaymentAttempt, user: User) -> bytes:
         """A standalone payment-instructions PDF for a BANK_TRANSFER
         attempt — deliberately not routed through the invoice_generator
@@ -455,7 +467,7 @@ class PaymentService:
         for line in (
             f"Billed to: {user.email}",
             f"Package: {attempt.package_key} ({attempt.credits:,} credits)",
-            f"Amount due: {float(attempt.amount_usd):.2f} USD",
+            f"Amount due: {self._format_amount_due(attempt)}",
         ):
             c.drawString(inch, y, line)
             y -= 0.22 * inch
@@ -478,6 +490,14 @@ class PaymentService:
 
         c.save()
         return buf.getvalue()
+
+    def _format_amount_due(self, attempt: PaymentAttempt) -> str:
+        amount_zar = self.bank_transfer_amount_zar(attempt.package_key)
+        if amount_zar is None:
+            # A package retired after this attempt was booked — fall back
+            # to what was recorded rather than printing nothing.
+            return f"{float(attempt.amount_usd):.2f} USD"
+        return f"R{amount_zar:,.2f} (ZAR)"
 
 
 payment_service = PaymentService()
